@@ -9,14 +9,14 @@ Weapons.register('shotgun', {
     },
     color: 0xb8ff4d,
     projectile: {
-        speed: 55, size: 0.016, stretch: 2.5, color: 0xb8ff4d, core: 0xf4ffd6, maxDist: 28,
-        trail: { spacing: 0.55, life: 0.18, size: 0.011, drift: 0.25, sparks: 0.08, length: 10 },
-        impact: { count: 3, size: 0.016 }
+        speed: 55, color: 0x9dff2e, core: 0xf4ffd6, maxDist: 28,
+        radius: 0.02, length: 0.1, tail: 2.6, trailWidth: 0.05,
+        impact: { sparks: 1, size: 0.012 }
     },
     chargedProjectile: {
-        speed: 75, size: 0.024, stretch: 3, color: 0xd6ff6e, core: 0xffffff, maxDist: 34,
-        trail: { spacing: 0.45, life: 0.24, size: 0.014, drift: 0.3, sparks: 0.2, length: 14 },
-        impact: { count: 5, size: 0.02, ring: 0.18 }
+        speed: 75, color: 0xc6ff4a, core: 0xffffff, maxDist: 34,
+        radius: 0.026, length: 0.14, tail: 3.4, trailWidth: 0.065,
+        impact: { sparks: 2, size: 0.014, ring: 0.18 }
     },
     inspect: { time: 3.4 },
     hands: { left: 'pump', right: 'grip' },

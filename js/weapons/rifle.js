@@ -9,14 +9,14 @@ Weapons.register('rifle', {
     },
     color: 0xffc44a,
     projectile: {
-        speed: 80, size: 0.015, stretch: 5, color: 0xffc44a, core: 0xfff3c8, maxDist: 60,
-        trail: { spacing: 0.3, life: 0.24, size: 0.009, drift: 0.12, sparks: 0.12, length: 20 },
-        impact: { count: 7, size: 0.018 }
+        speed: 80, color: 0xffb020, core: 0xfff3c8, maxDist: 60,
+        radius: 0.02, length: 0.22, tail: 2.2,
+        impact: { sparks: 3, size: 0.012 }
     },
     burstProjectile: {
-        speed: 95, size: 0.017, stretch: 7, color: 0xffd36e, core: 0xffffff, maxDist: 70,
-        trail: { spacing: 0.26, life: 0.3, size: 0.01, drift: 0.1, sparks: 0.3, length: 24 },
-        impact: { count: 9, size: 0.02 }
+        speed: 95, color: 0xffc940, core: 0xffffff, maxDist: 70,
+        radius: 0.022, length: 0.28, tail: 2.8,
+        impact: { sparks: 4, size: 0.014 }
     },
     inspect: { time: 3.3 },
     hands: { left: 'handguard', right: 'grip' },

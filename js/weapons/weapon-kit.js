@@ -506,28 +506,146 @@ class SporeFX {
     }
 }
 
+// Bullets are an unlit neon cylinder + one camera-facing trail ribbon,
+// so a bullet costs 2 draw calls instead of spawning trail particles.
+// All the glow lives inside the bullet's own silhouette - no halo, no light radius.
 class SporeProjectiles {
     constructor(fx) {
         this.fx = fx;
         this.live = [];
         this.pool = [];
-        this.mats = {};
-        this.geo = new THREE.IcosahedronGeometry(1, 1);
+        this.texCache = {};
         this.max = 64;
+        this.geo = SporeProjectiles.quad();
+        // unit cylinder along +Z, centred on the origin
+        this.body = new THREE.CylinderGeometry(1, 1, 1, 10, 1).rotateX(Math.PI / 2);
         this._a = new THREE.Vector3();
-        this._b = new THREE.Vector3();
         this._p = new THREE.Vector3();
         this._z = new THREE.Vector3(0, 0, 1);
     }
 
-    mat(color, opacity) {
-        const key = color + ':' + opacity;
-        if (!this.mats[key]) {
-            this.mats[key] = new THREE.MeshBasicMaterial({
-                color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false
-            });
+    // unit quad lying along +Z (0 = head, 1 = tail), width along X
+    static quad() {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, -0.5, 0, 1, 0.5, 0, 1], 3));
+        g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 1, 1], 2));
+        g.setIndex([0, 2, 1, 1, 2, 3]);
+        return g;
+    }
+
+    // onBeforeRender hook: spin the trail around its own axis so it always faces the camera
+    static billboard(renderer, scene, camera) {
+        const s = this.userData.seg;
+        const B = SporeProjectiles._bb || (SporeProjectiles._bb = {
+            cam: new THREE.Vector3(), x: new THREE.Vector3(), y: new THREE.Vector3(),
+            z: new THREE.Vector3(), sc: new THREE.Vector3()
+        });
+        const len = B.z.subVectors(s.tail, s.head).length();
+        if (len < 1e-4 || s.width <= 0) {
+            this.matrixWorld.makeScale(0, 0, 0);
+            return;
         }
-        return this.mats[key];
+        B.z.multiplyScalar(1 / len);
+        B.cam.setFromMatrixPosition(camera.matrixWorld).sub(s.head);
+        B.x.crossVectors(B.z, B.cam);
+        if (B.x.lengthSq() < 1e-10) {
+            B.x.set(0, 1, 0).cross(B.z);
+            if (B.x.lengthSq() < 1e-10) {
+                B.x.set(1, 0, 0);
+            }
+        }
+        B.x.normalize();
+        B.y.crossVectors(B.z, B.x);
+        this.matrixWorld.makeBasis(B.x, B.y, B.z).scale(B.sc.set(s.width, 1, len)).setPosition(s.head);
+    }
+
+    // Trail texture, baked once per colour pair: hot core line, gun colour out to the edge,
+    // fading toward the tail. Drawn additively; RGB is the intensity (black = nothing).
+    trailTex(color, core) {
+        const key = color + ':' + core;
+        if (this.texCache[key]) {
+            return this.texCache[key];
+        }
+        const c = new THREE.Color(color);
+        const h = new THREE.Color(core);
+        const W = 16;
+        const H = 128;
+        const cv = document.createElement('canvas');
+        cv.width = W;
+        cv.height = H;
+        const ctx = cv.getContext('2d');
+        const img = ctx.createImageData(W, H);
+        const d = img.data;
+        for (let y = 0; y < H; y++) {
+            const v = (y + 0.5) / H;
+            const along = Math.pow(1 - v, 1.4);
+            const w = 1 - v * 0.5;
+            for (let x = 0; x < W; x++) {
+                const u = Math.abs((x + 0.5) / W * 2 - 1);
+                const body = WeaponKit.clamp((w - u) / 0.15) * along;
+                const hot = Math.exp(-Math.pow(u / (w * 0.35), 2)) * along * (1 - v * 0.7);
+                const i = (y * W + x) * 4;
+                d[i] = Math.min(255, (c.r * body + h.r * hot) * 255);
+                d[i + 1] = Math.min(255, (c.g * body + h.g * hot) * 255);
+                d[i + 2] = Math.min(255, (c.b * body + h.b * hot) * 255);
+                d[i + 3] = 255;
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+        const t = new THREE.CanvasTexture(cv);
+        t.flipY = false;
+        this.texCache[key] = t;
+        return t;
+    }
+
+    // Unlit neon shader: white-hot where the surface faces you, pure gun colour at the rim.
+    static neonMat() {
+        return new THREE.ShaderMaterial({
+            uniforms: { color: { value: new THREE.Color() }, core: { value: new THREE.Color() } },
+            vertexShader: `
+                varying vec3 vN;
+                varying vec3 vV;
+                void main() {
+                    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                    vN = normalize(normalMatrix * normal);
+                    vV = normalize(-mv.xyz);
+                    gl_Position = projectionMatrix * mv;
+                }`,
+            fragmentShader: `
+                uniform vec3 color;
+                uniform vec3 core;
+                varying vec3 vN;
+                varying vec3 vV;
+                void main() {
+                    float f = clamp(dot(normalize(vN), normalize(vV)), 0.0, 1.0);
+                    gl_FragColor = vec4(mix(color, core, pow(f, 3.0) * 0.85), 1.0);
+                }`
+        });
+    }
+
+    make() {
+        const tmat = new THREE.MeshBasicMaterial({
+            transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+        });
+        tmat.fog = false;
+        tmat.toneMapped = false;
+        const trail = new THREE.Mesh(this.geo, tmat);
+        trail.frustumCulled = false;
+        trail.userData.seg = { head: new THREE.Vector3(), tail: new THREE.Vector3(), width: 0 };
+        trail.onBeforeRender = SporeProjectiles.billboard;
+
+        const body = new THREE.Mesh(this.body, SporeProjectiles.neonMat());
+        body.frustumCulled = false;
+        return {
+            trail,
+            body,
+            from: new THREE.Vector3(),
+            dir: new THREE.Vector3(),
+            pos: new THREE.Vector3(),
+            side: new THREE.Vector3(),
+            up: new THREE.Vector3(),
+            normal: new THREE.Vector3()
+        };
     }
 
     spawn(from, to, cfg, hit) {
@@ -535,24 +653,14 @@ class SporeProjectiles {
         if (!parent || this.live.length >= this.max) {
             return;
         }
-        let p = this.pool.pop();
-        if (!p) {
-            p = {
-                core: new THREE.Mesh(this.geo),
-                halo: new THREE.Mesh(this.geo),
-                from: new THREE.Vector3(),
-                dir: new THREE.Vector3(),
-                pos: new THREE.Vector3(),
-                side: new THREE.Vector3(),
-                up: new THREE.Vector3()
-            };
-            p.core.frustumCulled = p.halo.frustumCulled = false;
-        }
-        p.core.material = this.mat(cfg.core || 0xffffff, 1);
-        p.halo.material = this.mat(cfg.color, 0.55);
-        parent.add(p.core);
-        parent.add(p.halo);
-        p.core.visible = p.halo.visible = true;
+        const p = this.pool.pop() || this.make();
+        p.trail.material.map = this.trailTex(cfg.trailColor || cfg.color, cfg.core || 0xffffff);
+        p.trail.material.opacity = cfg.trailOpacity === undefined ? 1 : cfg.trailOpacity;
+        p.body.material.uniforms.color.value.set(cfg.color);
+        p.body.material.uniforms.core.value.set(cfg.core || 0xffffff);
+        parent.add(p.trail);
+        parent.add(p.body);
+        p.trail.visible = p.body.visible = true;
         p.cfg = cfg;
         p.hit = hit || null;
         p.from.copy(from);
@@ -565,9 +673,16 @@ class SporeProjectiles {
         }
         p.side.normalize();
         p.up.copy(p.dir).cross(p.side).normalize();
+        if (p.hit && p.hit.normal) {
+            p.normal.copy(p.hit.normal);
+        } else {
+            p.normal.copy(p.dir).negate();
+        }
+        p.body.quaternion.setFromUnitVectors(this._z, p.dir);
         p.travelled = 0;
-        p.dropped = 0;
+        p.tailD = 0;
         p.age = 0;
+        p.done = false;
         p.phase = Math.random() * Math.PI * 2;
         p.pos.copy(from);
         this.live.push(p);
@@ -586,91 +701,69 @@ class SporeProjectiles {
 
     update(dt) {
         const K = WeaponKit;
-        const fx = this.fx;
         for (let i = this.live.length - 1; i >= 0; i--) {
             const p = this.live[i];
             const c = p.cfg;
             p.age += dt;
-            p.travelled = Math.min(p.dist, p.travelled + c.speed * dt);
-            this.at(p, p.travelled, p.pos);
 
-            const s = c.size;
-            const q = p.core.quaternion.setFromUnitVectors(this._z, p.dir);
-            p.halo.quaternion.copy(q);
-            p.core.position.copy(p.pos);
-            p.halo.position.copy(p.pos);
-            p.core.scale.set(s * 0.45, s * 0.45, s * 0.45 * (c.stretch || 1));
-            const fl = 1 + Math.sin(p.age * 60 + p.phase) * 0.15;
-            p.halo.scale.set(s * fl, s * fl, s * fl * (c.stretch || 1) * 1.2);
-
-            const t = c.trail;
-            if (t) {
-                const spacing = t.spacing || 0.4;
-                const end = Math.min(p.travelled, t.length || 25);
-                let budget = 10;
-                while (p.dropped + spacing <= end && budget-- > 0) {
-                    p.dropped += spacing;
-                    const pt = this.at(p, p.dropped, this._a);
-                    if (c.spiral) {
-                        const strands = c.spiral.strands || 1;
-                        for (let k = 0; k < strands; k++) {
-                            const a = p.phase + p.dropped * c.spiral.freq + (k / strands) * Math.PI * 2;
-                            const r = c.spiral.radius * Math.min(1, p.dropped / 1.5);
-                            this._b.copy(pt).addScaledVector(p.side, Math.cos(a) * r).addScaledVector(p.up, Math.sin(a) * r);
-                            fx.emit({ world: true, pos: this._b, vel: this._p.set(0, 0, 0), life: t.life * 1.3, size: t.size * 0.8, sizeEnd: 0, color: c.spiral.color || t.color || c.color, drag: 1 });
-                        }
-                    }
-                    const drift = t.drift || 0.15;
-                    fx.emit({
-                        world: true, pos: pt, vel: K.sphereDir(this._p).multiplyScalar(drift),
-                        life: t.life * K.rand(0.7, 1.2), size: t.size * K.rand(0.7, 1.2), sizeEnd: 0,
-                        color: t.color || c.color, drag: 2, fadeIn: 0.01
-                    });
-                    if (t.sparks && Math.random() < t.sparks) {
-                        fx.emit({ world: true, pos: pt, vel: K.sphereDir(this._p).multiplyScalar(K.rand(0.4, 1.2)), life: 0.3, size: t.size * 0.5, sizeEnd: 0, color: c.core || 0xffffff, drag: 3, gravity: 1.5 });
-                    }
-                }
-                if (budget <= 0) {
-                    p.dropped = end;
+            if (!p.done) {
+                p.travelled = Math.min(p.dist, p.travelled + c.speed * dt);
+                if (p.travelled >= p.dist || p.age > 4) {
+                    p.done = true;
+                    p.body.visible = false;
+                    this.impact(p);
                 }
             }
+            this.at(p, p.travelled, p.pos);
 
-            if (p.travelled >= p.dist || p.age > 4) {
-                this.impact(p);
+            // body: grows in over the first metre so it doesn't fill the screen at the muzzle
+            const len = c.length || 0.2;
+            const r = c.radius || 0.015;
+            const grow = 0.4 + 0.6 * K.clamp(p.travelled);
+            p.body.position.copy(p.pos).addScaledVector(p.dir, -len * grow * 0.5);
+            p.body.scale.set(r * grow, r * grow, len * grow);
+
+            // trail starts at the back of the body and follows it; after impact the tail catches up
+            const head = Math.max(0, p.travelled - (p.done ? 0 : len * grow));
+            p.tailD = Math.max(p.tailD, head - (c.tail || 1.5));
+            if (p.done) {
+                p.tailD = Math.min(head, p.tailD + c.speed * dt);
+            }
+            const seg = p.trail.userData.seg;
+            this.at(p, head, seg.head);
+            this.at(p, p.tailD, seg.tail);
+            seg.width = (c.trailWidth || r * 2) * grow;
+            p.trail.position.copy(seg.head);
+
+            if (p.done && p.tailD >= head - 1e-3) {
                 this.recycle(i);
             }
         }
     }
 
     impact(p) {
+        if (!p.hit) {
+            return;
+        }
         const c = p.cfg;
         const imp = c.impact || {};
         const fx = this.fx;
         const K = WeaponKit;
-        if (!p.hit) {
-            for (let i = 0; i < 3; i++) {
-                fx.emit({ world: true, pos: p.pos, vel: K.sphereDir(this._p).multiplyScalar(0.3), life: 0.3, size: c.size * 0.6, sizeEnd: 0, color: c.color, drag: 3 });
-            }
-            return;
-        }
-        const n = p.hit.normal || this._b.copy(p.dir).negate();
-        const count = imp.count || 6;
-        const size = imp.size || 0.02;
+        const count = imp.sparks === undefined ? 3 : imp.sparks;
+        const size = imp.size || 0.012;
         for (let i = 0; i < count; i++) {
-            const v = K.sphereDir(this._p).multiplyScalar(0.9).addScaledVector(n, 1.3).multiplyScalar(K.rand(0.6, 1.4));
-            fx.emit({ world: true, pos: p.hit.point, vel: v, life: K.rand(0.25, 0.45), size, sizeEnd: 0.003, color: i % 3 ? c.color : (c.core || 0xffffff), drag: 3, gravity: 2.5, stretch: 0.02 });
+            const v = K.sphereDir(this._p).multiplyScalar(0.8).addScaledVector(p.normal, 1.4).multiplyScalar(K.rand(0.8, 1.6));
+            fx.emit({ world: true, pos: p.pos, vel: v, life: K.rand(0.15, 0.3), size, sizeEnd: 0, color: i % 2 ? (c.core || 0xffffff) : c.color, drag: 4, gravity: 3, stretch: 0.03 });
         }
-        const puffPos = this._a.copy(p.hit.point).addScaledVector(n, 0.03);
-        fx.emit({ world: true, pos: puffPos, vel: this._p.copy(n).multiplyScalar(0.3), life: 0.7, size: size * 2, sizeEnd: size * 6, color: 0xcfc6a8, additive: false, opacity: 0.35, drag: 3, fadeIn: 0.03 });
-        fx.emit({ world: true, pos: puffPos, vel: this._p.set(0, 0, 0), life: 0.5, size: size * 1.5, sizeEnd: size * 0.5, color: c.color, opacity: 0.8, drag: 0 });
         if (imp.ring) {
-            fx.emit({ world: true, shape: 'ring', pos: puffPos, dir: n, vel: this._p.set(0, 0, 0), life: 0.3, size: size * 1.5, sizeEnd: imp.ring, color: c.color, opacity: 0.9 });
+            const at = this._a.copy(p.pos).addScaledVector(p.normal, 0.03);
+            fx.emit({ world: true, shape: 'ring', pos: at, dir: p.normal, vel: this._p.set(0, 0, 0), life: 0.3, size: size * 2, sizeEnd: imp.ring, color: c.color, opacity: 0.9 });
         }
     }
 
     recycle(i) {
         const p = this.live[i];
-        p.core.visible = p.halo.visible = false;
+        p.trail.visible = p.body.visible = false;
         this.live.splice(i, 1);
         this.pool.push(p);
     }
@@ -684,17 +777,20 @@ class SporeProjectiles {
     dispose() {
         this.clear();
         for (const p of this.pool) {
-            for (const m of [p.core, p.halo]) {
+            for (const m of [p.trail, p.body]) {
                 if (m.parent) {
                     m.parent.remove(m);
                 }
+                m.material.dispose();
             }
         }
         this.pool.length = 0;
-        for (const k in this.mats) {
-            this.mats[k].dispose();
+        for (const k in this.texCache) {
+            this.texCache[k].dispose();
         }
+        this.texCache = {};
         this.geo.dispose();
+        this.body.dispose();
     }
 }
 

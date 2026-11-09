@@ -19,9 +19,9 @@
         },
         color: 0x45ffc8,
         projectile: {
-            speed: 65, size: 0.014, stretch: 3.5, color: 0x45ffc8, core: 0xe6fff8, maxDist: 50, wobble: 0.03,
-            trail: { spacing: 0.32, life: 0.26, size: 0.009, drift: 0.1, sparks: 0.1, length: 16 },
-            impact: { count: 6, size: 0.016 }
+            speed: 65, color: 0x2bffc0, core: 0xe6fff8, maxDist: 50, wobble: 0.03,
+            radius: 0.018, length: 0.16, tail: 1.5,
+            impact: { sparks: 3, size: 0.012 }
         },
         inspect: { time: 3.2 },
         throwT: { windup: 0.22, flight: 1.35, catch: 0.32, damage: 30, reach: 6 },

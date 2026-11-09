@@ -9,10 +9,9 @@ Weapons.register('sniper', {
     },
     color: 0xc77dff,
     projectile: {
-        speed: 130, size: 0.028, stretch: 8, color: 0xc77dff, core: 0xffffff, maxDist: 120,
-        trail: { spacing: 0.32, life: 0.5, size: 0.013, drift: 0.08, sparks: 0.15, length: 28 },
-        spiral: { radius: 0.06, freq: 2.6, strands: 2, color: 0xffd6f6 },
-        impact: { count: 14, size: 0.026, ring: 0.35 }
+        speed: 130, color: 0xb45cff, core: 0xffffff, maxDist: 120,
+        radius: 0.026, length: 0.45, tail: 5,
+        impact: { sparks: 6, size: 0.018, ring: 0.35 }
     },
     scope: { fov: 16, sensitivity: 0.3 },
     inspect: { time: 3.4 },
