@@ -23,8 +23,6 @@ const Input = {
     lookSkip: 0,
     lastLook: 0,
 
-    // Chromium under pointer lock occasionally reports a bogus, huge movementX/Y
-    // (especially the first event after locking), which snaps the camera. Drop those.
     lookDelta(e) {
         const x = e.movementX || 0;
         const y = e.movementY || 0;
@@ -61,6 +59,33 @@ const Input = {
     }
 };
 
+function snapDown(p, body, reach) {
+    const y = p.y;
+    p.y = y - reach;
+    const h = body.hits(p);
+    p.y = y;
+    if (!h) {
+        return false;
+    }
+    const top = colTop(h, p.x, p.z);
+    if (top > y + 1e-3 || top < y - reach) {
+        return false;
+    }
+    p.y = top;
+    body.vel.y = 0;
+    body.onGround = true;
+    return true;
+}
+
+function colTop(c, x, z) {
+    const s = c.slope;
+    if (!s) {
+        return c.max.y;
+    }
+    const h = s.base + ((s.axis === 'x' ? x : z) - s.start) * s.dir * s.k;
+    return h < 0 ? 0 : h > s.top ? s.top : h;
+}
+
 const Player = {
     pos: new THREE.Vector3(),
     vel: new THREE.Vector3(),
@@ -76,7 +101,18 @@ const Player = {
         this.vel.set(0, 0, 0);
         this.yaw = spawn.yaw;
         this.pitch = 0;
+        this.stun = 0;
         this.syncCamera();
+    },
+
+    stun: 0,
+    knock(dir, power, stun) {
+        this.vel.x += dir.x * power;
+        this.vel.z += dir.z * power;
+        this.vel.y = Math.max(this.vel.y, power * 0.3);
+        this.stun = Math.max(this.stun, stun);
+        this.pitch = Math.max(-1.55, Math.min(1.55, this.pitch + 0.12));
+        this.yaw += (Math.random() - 0.5) * 0.16;
     },
 
     look(dx, dy) {
@@ -96,7 +132,7 @@ const Player = {
                 p.z + r > b.min.z &&
                 p.z - r < b.max.z &&
                 p.y + h > b.min.y &&
-                p.y < b.max.y
+                p.y < colTop(b, p.x, p.z) - 1e-4
             ) {
                 return b;
             }
@@ -105,8 +141,20 @@ const Player = {
     },
 
     slide(p, axis) {
-        if (!this.hits(p)) {
+        const b = this.hits(p);
+        if (!b) {
             return;
+        }
+        if (b.slope && (this.onGround || this.vel.y <= 0)) {
+            const y = p.y;
+            const top = colTop(b, p.x, p.z);
+            if (top - y <= 0.65) {
+                p.y = top;
+                if (!this.hits(p)) {
+                    return;
+                }
+                p.y = y;
+            }
         }
         if (this.onGround) {
             const y = p.y;
@@ -136,7 +184,14 @@ const Player = {
             wz = wz / len * speed;
         }
 
-        const t = 1 - Math.exp(-CONFIG.accel * dt);
+        let accel = CONFIG.accel;
+        if (this.stun > 0) {
+            this.stun -= dt;
+            wx *= 0.25;
+            wz *= 0.25;
+            accel = 2.5;
+        }
+        const t = 1 - Math.exp(-accel * dt);
         this.vel.x += (wx - this.vel.x) * t;
         this.vel.z += (wz - this.vel.z) * t;
 
@@ -152,16 +207,20 @@ const Player = {
         p.z += this.vel.z * dt;
         this.slide(p, 'z');
         p.y += this.vel.y * dt;
+        const wasGround = this.onGround;
         this.onGround = false;
         const hit = this.hits(p);
         if (hit) {
             if (this.vel.y < 0) {
-                p.y = hit.max.y;
+                p.y = colTop(hit, p.x, p.z);
                 this.onGround = true;
             } else {
                 p.y = this.pos.y;
             }
             this.vel.y = 0;
+        }
+        if (!this.onGround && wasGround && this.vel.y <= 0 && p.y > 0) {
+            snapDown(p, this, 0.45);
         }
         if (p.y <= 0) {
             p.y = 0;
@@ -202,6 +261,16 @@ class RoomBuilder {
             min: new THREE.Vector3(x - w / 2, y, z - d / 2),
             max: new THREE.Vector3(x + w / 2, y + h, z + d / 2),
             off: false
+        };
+        this.colliders.push(c);
+        return c;
+    }
+    ramp(x0, x1, z0, z1, slope) {
+        const c = {
+            min: new THREE.Vector3(Math.min(x0, x1), 0, Math.min(z0, z1)),
+            max: new THREE.Vector3(Math.max(x0, x1), slope.top, Math.max(z0, z1)),
+            off: false,
+            slope
         };
         this.colliders.push(c);
         return c;

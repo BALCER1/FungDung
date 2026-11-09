@@ -3,7 +3,7 @@ Weapons.register('rifle', {
     altName: 'Burst',
     offset: [0.27, -0.17, -0.58],
     stats: {
-        mag: 24, rate: 8.5, auto: true, damage: 14, pellets: 1, spread: 0.014, range: 120,
+        mag: 24, rate: 8.5, auto: true, damage: 18, pellets: 1, spread: 0.014, range: 120,
         reloadTime: 2.6, drawTime: 0.45,
         kick: { back: 0.028, up: 0.04, roll: 0.02 }
     },

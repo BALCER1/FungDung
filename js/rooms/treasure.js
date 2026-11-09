@@ -4,7 +4,6 @@ Rooms.register('treasure', {
     build(b, node) {
         const { W, L, H } = RoomKit.basicRoom(b, { color: this.color, width: 24, length: 32, height: 6 });
         const pal = RoomKit.palette(this.color);
-        // stepped dais in the middle for the loot, ringed by pillars
         RoomKit.mound(b, 0, -1, 7, 7, 3, pal.mound);
         for (let i = 0; i < 6; i++) {
             const a = (i / 6) * Math.PI * 2;

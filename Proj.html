@@ -370,6 +370,7 @@
       <button data-tab="display">Display</button>
       <button data-tab="audio">Audio</button>
       <button data-tab="controls">Controls</button>
+      <button data-tab="developer">Developer</button>
     </div>
 
     <div class="tab" data-tab="graphics">
@@ -415,6 +416,14 @@
       <p>WASD move &middot; Space jump &middot; Shift sprint &middot; E interact &middot; M map &middot; Esc pause</p>
       <p>LMB fire &middot; RMB alt fire &middot; R reload &middot; F inspect &middot; 1-4 / wheel switch weapon</p>
     </div>
+
+    <div class="tab" data-tab="developer" hidden>
+      <div class="row">Dev mode
+        <input id="setDev" type="checkbox">
+      </div>
+      <p>Shows every enemy's stats, what it's thinking, its vision cone, current path, the pack's memory of you (red = last seen, orange = where it thinks you went) and how long the enemy AI takes each frame.</p>
+      <p>While dev mode is on, ` (backtick) hides and shows the overlay.</p>
+    </div>
   </div>
   <button id="optionsBackBtn">Back</button>
 </div>
@@ -439,6 +448,12 @@
   <h1>Run Complete</h1>
   <p>You beat the boss.</p>
   <button id="endMenuBtn">Main Menu</button>
+</div>
+
+<div id="deadScreen" class="screen" hidden>
+  <h1>You Died</h1>
+  <p id="deadInfo"></p>
+  <button id="deadMenuBtn">Main Menu</button>
 </div>
 
 <div id="quitScreen" class="screen" hidden>
@@ -469,6 +484,10 @@
 <script src="js/weapons/sniper.js"></script>
 <script src="js/weapons/pistols.js"></script>
 <script src="js/weapons/arsenal.js"></script>
+<script src="js/vitals.js"></script>
+<script src="js/enemies/nav.js"></script>
+<script src="js/enemies/enemy-kit.js"></script>
+<script src="js/enemies/shellcap.js"></script>
 <script src="js/map.js"></script>
 <script src="js/game.js"></script>
 </body>

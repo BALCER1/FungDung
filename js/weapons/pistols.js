@@ -13,7 +13,7 @@
         offset: [0, -0.145, -0.45],
         sprintYaw: 0.2,
         stats: {
-            mag: 16, rate: 9, auto: true, damage: 13, pellets: 1, spread: 0.022, range: 70,
+            mag: 16, rate: 9, auto: true, damage: 17, pellets: 1, spread: 0.022, range: 70,
             reloadTime: 2.5, drawTime: 0.4,
             kick: { back: 0.012, up: 0.016, roll: 0.01 }
         },

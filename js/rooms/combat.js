@@ -3,5 +3,6 @@ Rooms.register('combat', {
     color: 0xd9534f,
     build(b, node) {
         RoomKit.arena(b, { color: this.color, width: 40, length: 60, height: 9 });
+        b.enemies = [{ type: 'shellcap', count: [3, 5] }];
     }
 });

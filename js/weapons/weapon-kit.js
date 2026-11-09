@@ -506,9 +506,6 @@ class SporeFX {
     }
 }
 
-// Bullets are an unlit neon cylinder + one camera-facing trail ribbon,
-// so a bullet costs 2 draw calls instead of spawning trail particles.
-// All the glow lives inside the bullet's own silhouette - no halo, no light radius.
 class SporeProjectiles {
     constructor(fx) {
         this.fx = fx;
@@ -517,14 +514,12 @@ class SporeProjectiles {
         this.texCache = {};
         this.max = 64;
         this.geo = SporeProjectiles.quad();
-        // unit cylinder along +Z, centred on the origin
         this.body = new THREE.CylinderGeometry(1, 1, 1, 10, 1).rotateX(Math.PI / 2);
         this._a = new THREE.Vector3();
         this._p = new THREE.Vector3();
         this._z = new THREE.Vector3(0, 0, 1);
     }
 
-    // unit quad lying along +Z (0 = head, 1 = tail), width along X
     static quad() {
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.Float32BufferAttribute([-0.5, 0, 0, 0.5, 0, 0, -0.5, 0, 1, 0.5, 0, 1], 3));
@@ -533,7 +528,6 @@ class SporeProjectiles {
         return g;
     }
 
-    // onBeforeRender hook: spin the trail around its own axis so it always faces the camera
     static billboard(renderer, scene, camera) {
         const s = this.userData.seg;
         const B = SporeProjectiles._bb || (SporeProjectiles._bb = {
@@ -559,8 +553,6 @@ class SporeProjectiles {
         this.matrixWorld.makeBasis(B.x, B.y, B.z).scale(B.sc.set(s.width, 1, len)).setPosition(s.head);
     }
 
-    // Trail texture, baked once per colour pair: hot core line, gun colour out to the edge,
-    // fading toward the tail. Drawn additively; RGB is the intensity (black = nothing).
     trailTex(color, core) {
         const key = color + ':' + core;
         if (this.texCache[key]) {
@@ -598,7 +590,6 @@ class SporeProjectiles {
         return t;
     }
 
-    // Unlit neon shader: white-hot where the surface faces you, pure gun colour at the rim.
     static neonMat() {
         return new THREE.ShaderMaterial({
             uniforms: { color: { value: new THREE.Color() }, core: { value: new THREE.Color() } },
@@ -716,14 +707,12 @@ class SporeProjectiles {
             }
             this.at(p, p.travelled, p.pos);
 
-            // body: grows in over the first metre so it doesn't fill the screen at the muzzle
             const len = c.length || 0.2;
             const r = c.radius || 0.015;
             const grow = 0.4 + 0.6 * K.clamp(p.travelled);
             p.body.position.copy(p.pos).addScaledVector(p.dir, -len * grow * 0.5);
             p.body.scale.set(r * grow, r * grow, len * grow);
 
-            // trail starts at the back of the body and follows it; after impact the tail catches up
             const head = Math.max(0, p.travelled - (p.done ? 0 : len * grow));
             p.tailD = Math.max(p.tailD, head - (c.tail || 1.5));
             if (p.done) {

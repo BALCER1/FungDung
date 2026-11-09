@@ -6,7 +6,8 @@ const Settings = {
         fov: CONFIG.fov,
         sensitivity: 4,
         fullscreen: false,
-        darkMode: false
+        darkMode: false,
+        devMode: false
     },
 
     init() {
@@ -26,7 +27,8 @@ const Settings = {
             sens: $('sens'),
             sensOut: $('sensOut'),
             res: $('setRes'),
-            dark: $('setDark')
+            dark: $('setDark'),
+            dev: $('setDev')
         };
 
         document.querySelectorAll('#optionsMenu .tabs button').forEach(btn => {
@@ -44,6 +46,8 @@ const Settings = {
         this.el.fov.oninput = () => this.set('fov', +this.el.fov.value);
         this.el.sens.oninput = () => this.set('sensitivity', +this.el.sens.value);
         this.el.dark.onchange = () => this.set('darkMode', this.el.dark.checked);
+        this.el.dev.checked = this.values.devMode;
+        this.el.dev.onchange = () => this.set('devMode', this.el.dev.checked);
 
         this.el.fullscreen.value = this.values.fullscreen ? 'fullscreen' : 'windowed';
         this.el.fullscreen.onchange = () => this.setFullscreen(this.el.fullscreen.value === 'fullscreen');
@@ -104,6 +108,9 @@ const Settings = {
         camera.fov = v.fov;
         camera.updateProjectionMatrix();
         CONFIG.sensitivity = v.sensitivity * 0.0005;
+        if (typeof Enemies !== 'undefined' && Enemies.ready) {
+            Enemies.setDev(v.devMode);
+        }
 
         this.el.scaleOut.textContent = Math.round(v.renderScale * 100) + '%';
         this.el.fovOut.textContent = v.fov + '°';

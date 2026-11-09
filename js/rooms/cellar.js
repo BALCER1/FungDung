@@ -2,7 +2,6 @@ Rooms.register('cellar', {
     name: 'Cellar',
     color: 0x8b5a2b,
     build(b, node) {
-        // low ceiling and tight, so no ledges or balconies, just a forest of pillars and junk
         RoomKit.arena(b, {
             color: this.color,
             width: 30,

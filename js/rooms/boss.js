@@ -2,7 +2,6 @@ Rooms.register('boss', {
     name: 'Boss',
     color: 0x8e1b1b,
     build(b, node) {
-        // symmetric arena with an open middle for the fight
         const { W, L, H } = RoomKit.basicRoom(b, { color: this.color, width: 56, length: 72, height: 12 });
         const pal = RoomKit.palette(this.color);
         RoomKit.ledge(b, -1, W, L, 5, 3.5, pal);

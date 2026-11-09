@@ -86,10 +86,10 @@ const RoomKit = {
 
         b.door = new Door(b, 0, -L, dw, dh, o.doorColor || 0x5b4130);
         b.spawn = { x: 0, z: L - 2, yaw: 0 };
+        b.bounds = { W, L, H };
         return { W, L, H };
     },
 
-    // ---- random helpers ----
     rand(a, b) {
         return a + Math.random() * (b - a);
     },
@@ -107,7 +107,6 @@ const RoomKit = {
         return Object.keys(table)[0];
     },
 
-    // Shades of the room colour so props read against the floor and walls.
     palette(color) {
         const tint = (k) => {
             const c = new THREE.Color(color);
@@ -124,9 +123,6 @@ const RoomKit = {
         };
     },
 
-    // ---- building blocks ----
-    // Stairs are stacked solid blocks; each rise stays under CONFIG.step so you walk straight up.
-    // (x, z) is the foot of the stairs, (dx, dz) the axis direction you climb toward.
     stairs(b, x, z, width, top, dx, dz, color) {
         const n = Math.ceil(top / 0.4);
         const rise = top / n;
@@ -136,12 +132,19 @@ const RoomKit = {
             const px = x + dx * (i + 0.5) * D;
             const pz = z + dz * (i + 0.5) * D;
             if (dx) {
-                b.box(px, 0, pz, D, h, width, color);
+                b.deco(px, 0, pz, D, h, width, color);
             } else {
-                b.box(px, 0, pz, width, h, D, color);
+                b.deco(px, 0, pz, width, h, D, color);
             }
         }
-        return n * D;
+        const len = n * D;
+        const slope = { axis: dx ? 'x' : 'z', dir: dx || dz, start: dx ? x : z, k: rise / D, base: rise * 0.5, top };
+        if (dx) {
+            b.ramp(x, x + dx * len, z - width / 2, z + width / 2, slope);
+        } else {
+            b.ramp(x - width / 2, x + width / 2, z, z + dz * len, slope);
+        }
+        return len;
     },
     stairsLength(top) {
         return Math.ceil(top / 0.4) * 0.6;
@@ -149,11 +152,9 @@ const RoomKit = {
     pillar(b, x, z, size, h, color) {
         b.box(x, 0, z, size, h, size, color);
     },
-    // Low wall you can see (and shoot) over.
     cover(b, x, z, len, alongX, color, h = 1.3) {
         b.box(x, 0, z, alongX ? len : 0.5, h, alongX ? 0.5 : len, color);
     },
-    // Stepped hill; every tier is a walkable step.
     mound(b, x, z, w, d, tiers, color) {
         for (let i = 0; i < tiers; i++) {
             const tw = w - i * 1.6;
@@ -177,7 +178,6 @@ const RoomKit = {
             }
         }
     },
-    // Raised platform on four legs with stairs up one side. Fits inside a w x d footprint.
     balcony(b, x, z, w, d, top, pal) {
         const run = this.stairsLength(top);
         const alongX = w >= d;
@@ -205,7 +205,6 @@ const RoomKit = {
         return true;
     },
 
-    // Fills one cell of the room grid with a random prop. w/d is the usable footprint.
     feature(b, kind, x, z, w, d, H, pal) {
         const alongX = Math.random() < 0.5;
         switch (kind) {
@@ -232,7 +231,6 @@ const RoomKit = {
                 const len = Math.min(alongX ? w : d, this.rand(3, 5.5));
                 this.cover(b, x, z, len, alongX, pal.cover);
                 if (Math.random() < 0.5) {
-                    // turn it into an L with a short arm off one end
                     const len2 = Math.min((alongX ? d : w) / 2, this.rand(2, 3.5));
                     const end = (len / 2 - 0.25) * (Math.random() < 0.5 ? 1 : -1);
                     const dir = Math.random() < 0.5 ? 1 : -1;
@@ -262,7 +260,6 @@ const RoomKit = {
         }
     },
 
-    // Raised walkway along a side wall with stairs at the spawn end.
     ledge(b, side, W, L, width, top, pal) {
         const run = this.stairsLength(top);
         const z0 = -L;
@@ -273,8 +270,6 @@ const RoomKit = {
         return width;
     },
 
-    // Big room with optional side ledges and a grid of random props.
-    // Spawn end and door end are kept clear so you never start boxed in.
     arena(b, o) {
         const dims = this.basicRoom(b, o);
         const { W, L, H } = dims;

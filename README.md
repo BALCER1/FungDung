@@ -51,9 +51,9 @@ Open `index.html` in a browser and hit Singleplayer. You need internet the first
 
 ## Current state
 
-**Working:** movement, full run loop from menu to boss, random map, all 4 weapons, settings (render scale, FOV, dark mode, fullscreen)
+**Working:** movement, full run loop from menu to boss, random map, all 4 weapons, settings (render scale, FOV, dark mode, fullscreen), player health and death, Shellcap enemies in combat and elite rooms
 
-**Still to do:** enemies, real rooms, items, player health, shop/events, sound, the boss
+**Still to do:** more enemy types (swarmers, bloaters, throwers), real rooms, items, healing, shop/events, sound, the boss
 
 ## Author
 

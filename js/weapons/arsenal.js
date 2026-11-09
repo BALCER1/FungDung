@@ -6,6 +6,8 @@ const Arsenal = {
     hud: null,
     hands: null,
     onHit: null,
+    onFire: null,
+    onShotEnd: null,
     firing: false,
 
     init() {
@@ -160,6 +162,9 @@ const Arsenal = {
     },
 
     shoot(shot) {
+        if (this.onFire && shot.dirs.length) {
+            this.onFire(shot);
+        }
         if (!this.onHit || !shot.hits) {
             return;
         }
@@ -168,6 +173,9 @@ const Arsenal = {
                 this.onHit(hit, shot);
             }
         });
+        if (this.onShotEnd) {
+            this.onShotEnd(shot);
+        }
     },
 
     makeHud() {

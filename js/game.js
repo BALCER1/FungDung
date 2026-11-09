@@ -6,12 +6,14 @@ const Game = {
     el: {},
 
     init() {
-        for (const id of ['mainMenu', 'optionsMenu', 'pauseMenu', 'mapScreen', 'endScreen', 'quitScreen', 'hud', 'tip', 'mapBackBtn', 'stageLabel', 'warn']) {
+        for (const id of ['mainMenu', 'optionsMenu', 'pauseMenu', 'mapScreen', 'endScreen', 'deadScreen', 'deadInfo', 'quitScreen', 'hud', 'tip', 'mapBackBtn', 'stageLabel', 'warn']) {
             this.el[id] = document.getElementById(id);
         }
         Input.init();
         Settings.init();
         Arsenal.init();
+        Vitals.init();
+        Enemies.init();
         MapView.init();
 
         const on = (id, fn) => document.getElementById(id).addEventListener('click', fn);
@@ -23,6 +25,7 @@ const Game = {
         on('abandonBtn', () => this.toMenu());
         on('optionsBackBtn', () => this.setState(this.optionsBack));
         on('endMenuBtn', () => this.toMenu());
+        on('deadMenuBtn', () => this.toMenu());
         on('quitBackBtn', () => this.setState('menu'));
         on('mapBackBtn', () => this.closeBrowse());
 
@@ -79,6 +82,7 @@ const Game = {
             map: 'mapScreen',
             mapview: 'mapScreen',
             complete: 'endScreen',
+            dead: 'deadScreen',
             quit: 'quitScreen'
         };
         for (const id of new Set(Object.values(screens))) {
@@ -95,7 +99,6 @@ const Game = {
     },
 
     lock() {
-        // Raw (unadjusted) input avoids Chromium's pointer-lock movement spikes on Windows.
         const el = renderer.domElement;
         let req;
         try {
@@ -115,6 +118,7 @@ const Game = {
 
     startRun() {
         this.unloadRoom();
+        Vitals.reset();
         RunMap.generate(CONFIG.stages);
         this.openMap();
     },
@@ -152,6 +156,7 @@ const Game = {
         this.room = b;
         Player.reset(b);
         Arsenal.reset();
+        Enemies.load(b);
         scene.background = new THREE.Color(b.background);
         scene.fog = b.fog;
         this.el.stageLabel.textContent = `Stage ${node.layer + 1} / ${RunMap.layers.length} - ${this.def.name}`;
@@ -160,6 +165,7 @@ const Game = {
     },
 
     unloadRoom() {
+        Enemies.clear();
         if (this.room) {
             this.room.dispose();
             this.room = null;
@@ -180,6 +186,14 @@ const Game = {
     toMenu() {
         this.unloadRoom();
         this.setState('menu');
+    },
+
+    die() {
+        const node = RunMap.current;
+        this.el.deadInfo.textContent = node ? `Consumed on stage ${node.layer + 1} of ${RunMap.layers.length}.` : '';
+        this.setState('dead');
+        document.exitPointerLock();
+        this.unloadRoom();
     },
 
     quit() {
@@ -207,8 +221,13 @@ const Game = {
         this.last = now;
         if (this.state === 'playing') {
             Player.update(dt);
+            Enemies.update(dt);
             this.updateRoom(dt);
             Arsenal.update(dt);
+            Vitals.update(dt);
+            if (Vitals.dead) {
+                this.die();
+            }
         }
         if (this.room && this.state !== 'mapview') {
             Arsenal.render();

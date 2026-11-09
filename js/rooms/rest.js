@@ -4,7 +4,6 @@ Rooms.register('rest', {
     build(b, node) {
         const { W, L, H } = RoomKit.basicRoom(b, { color: this.color, width: 20, length: 28, height: 5 });
         const pal = RoomKit.palette(this.color);
-        // low dais in the centre to rest on, four pillars around it
         RoomKit.mound(b, 0, 0, 6, 6, 2, pal.mound);
         for (const x of [-1, 1]) {
             for (const z of [-1, 1]) {
