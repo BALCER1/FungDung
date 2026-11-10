@@ -57,6 +57,7 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 | `js/db.js` | `DB`: Supabase client, guest sign-in, account upgrade, login, profile name. Sets `DB.status` to `online` or `offline` |
 | `js/profile.js` | `Profile`: Profile screen and the player name on the main menu |
 | `js/config.js` | `CONFIG` (tunables), `DETAIL` (graphics levels), `BOOT` |
+| `js/rng.js` | `Rng`: seeded random streams. `Rng.w()` for world generation, `Rng.ai()` for enemy decisions |
 | `js/engine.js` | `scene`, `camera`, `renderer`, `Input`, `Player`, `RoomBuilder`, `colTop`, `snapDown` |
 | `js/batch.js` | `MeshBatch`: merges a model into few draw calls (medium/potato detail) |
 | `js/settings.js`, `js/perf.js`, `js/intro.js` | Settings screen, FPS counter, intro animation |
@@ -67,10 +68,13 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 | `js/hands.js` | `HandKit`, `HandShapes`, `Hand`, `Hands` (grip-driven hands) |
 | `js/weapons/arsenal.js` | `Arsenal`: local player's weapons, input, HUD, two-pass render |
 | `js/vitals.js` | `Vitals`: local player HP, damage flash, hit direction marks |
+| `js/players.js` | `Players`: list of player records (local one mirrors `Player`/`Vitals`/`Arsenal`), `Players.hurt` (the one damage function) |
 | `js/enemies/nav.js` | `NavGrid`: grid, A*, flow fields, line of sight |
 | `js/enemies/enemy-kit.js` | `Memory`, `Enemy`, `Pack`, `HiveMind`, `Enemies`, `CommFX`, `DevView` |
 | `js/enemies/shellcap.js` | `ShellcapKit`, `Shellcap` (model, damage, animation), `ShellcapMind` (AI) |
 | `js/map.js` | `RunMap` (run graph), `MapView` (2D map screen) |
+| `js/net.js` | `Net`: PeerJS connection, host and guest roles, roster, lobby heartbeat, message handlers |
+| `js/lobby.js` | `Lobby`: Multiplayer, Host, Join and Lobby screens, invite links |
 | `js/game.js` | `Game`: states, screens, room lifecycle, main loop |
 
 ## Things that bite
@@ -94,6 +98,65 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
   JavaScript should point at `Proj.html` directly.
 - `Input.init` blocks the default action of Space except inside form fields. New text inputs work,
   but anything else that needs Space must be handled the same way.
+
+## Players, targeting and damage
+
+- `Players.list` holds one record per player: `pos`, `vel`, `eye`, `aim`, `hpF`, `reloading`,
+  `zoom`, `sprinting`, `onGround`, `inRoom`, `down`. The local record shares `Player.pos` and
+  `Player.vel` and is refreshed by `Players.update` each frame. Remote records are filled from the
+  network.
+- `Enemies.targets` is the players enemies may attack this frame (`inRoom` and not `down`). Enemy
+  code uses `e.target` (a player record) and never `Player`, `Vitals` or `Arsenal`. `Player` is
+  still fine in code that is about the local player (movement, HUD, camera, doors).
+- `HiveMind.retarget` picks `e.target`: seen and nearer players score higher, the current target
+  gets a bonus, a recent attacker gets a bonus, and a switch is blocked for `CONFIG.targeting.hold`
+  seconds and during locked actions. With one player it never changes.
+- `Memory` keeps one track per player id. Every method takes the player: `mem.age(T, now)`,
+  `mem.saw(T, pos, vel, now)`, `mem.predict(T, now, out)`, `mem.track(T).pos`.
+- Chase flow fields are per player: `nav.flowTo(player, cell, now)`. Per-player nav data is in
+  `player.nav`.
+- All damage and knockback to a player goes through `Players.hurt(player, amount, opts)`. It
+  rounds, applies `Players.damageScale`, and either applies it locally or calls
+  `Players.onRemoteHurt`.
+- Shots carry `shot.by` (the shooting player record). Noise carries `by` too.
+- Enemies have `e.id` (1..n per room, in spawn order) and `Enemies.get(id)`. Shellcap parts have
+  ids: plates use their name, other parts use an index. `e.partById(id)` returns `{ part, mesh }`.
+- Singleplayer regression check: a scripted fight with a fixed seed, fixed timestep and a seeded
+  `Math.random` is fully deterministic. Record it before an AI refactor and compare after.
+
+## Networking and lobbies
+
+- Libraries: PeerJS 1.5.5 (global `Peer`) and qrcode-generator 2.0.4 (global `qrcode`), both pinned
+  in `Proj.html`. PeerJS uses its public signalling server and its default STUN and TURN servers.
+- `Net.role` is `null`, `'host'` or `'guest'`. A player's id is their PeerJS id. `Net.roster` is
+  `[{ id, name, host }]`, owned by the host and broadcast on every change.
+- Messages are JSON objects `{ t: type, ... }` on one reliable connection per guest. Register a
+  handler with `Net.on(type, (msg, fromId) => ...)`. `fromId` is null on guests (it came from the
+  host). Send with `Net.send` (guest to host), `Net.broadcast` and `Net.sendTo` (host).
+- Built-in types: `hello`, `welcome`, `reject`, `roster`, `ping`, `pong`, `bye`, `closed`, `start`.
+  Bump `CONFIG.netVersion` whenever the message format or shared game rules change, so mismatched
+  builds refuse to connect.
+- The host checks version, started, full and password again when a guest connects, even though
+  `join_lobby` already did.
+- Players cannot read or write `lobbies` at all (RLS on, no policies). Server functions:
+  `create_lobby`, `heartbeat_lobby`, `close_lobby`, `list_lobbies`, `get_lobby`, `join_lobby`.
+  `join_lobby` returns `{ ok, error }` instead of raising, so wrong-password counts are kept.
+- `Game.toMenu` leaves the session. `Net.onClosed` (host left or connection lost) sends a guest to
+  the main menu with a message.
+- Two-player tests: two separate headless Chrome instances with their own profiles connect over
+  real PeerJS while `*.supabase.co` is mocked.
+
+## Seeded randomness
+
+- `Game.startRun(seed)` calls `Rng.start(seed)`. Each purpose then gets its own stream derived from
+  the run seed: `map`, `room/<layer>:<index>`, `spawn/<layer>:<index>`, `ai/<layer>:<index>`.
+  `Game.enterRoom` selects them, so a room looks the same whatever was visited before it.
+- Use `Rng.w()` (or `RoomKit.rand/pick/weighted`) for anything that shapes the world: map, room
+  layout, spawn counts and positions, loot. These must match on every client.
+- Use `Rng.ai()` for enemy decisions. It runs on the host only and will not replay identically,
+  because it depends on player input and frame timing.
+- Bullet spread (`WeaponKit.cone`) and all effects stay on `Math.random`.
+- Dev mode has a "Run seed" field (Settings > Developer). The seed shows next to the stage name.
 
 ## Supabase
 

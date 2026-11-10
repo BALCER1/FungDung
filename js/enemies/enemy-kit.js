@@ -166,45 +166,75 @@ class SporeCloud {
 
 class Memory {
     constructor() {
-        this.seen = { pos: new THREE.Vector3(), vel: new THREE.Vector3(), t: -1e9 };
-        this.shotFrom = { pos: new THREE.Vector3(), t: -1e9 };
-        this.searched = [];
+        this.tracks = new Map();
     }
-    known() {
-        return this.seen.t > -1e8;
+    byId(id) {
+        let s = this.tracks.get(id);
+        if (!s) {
+            s = {
+                id, pos: new THREE.Vector3(), vel: new THREE.Vector3(), t: -1e9,
+                shotPos: new THREE.Vector3(), shotT: -1e9, searched: []
+            };
+            this.tracks.set(id, s);
+        }
+        return s;
     }
-    age(now) {
-        return now - this.seen.t;
+    track(who) {
+        return this.byId(who.id);
     }
-    saw(pos, vel, now) {
-        this.seen.pos.copy(pos);
+    known(who) {
+        return this.track(who).t > -1e8;
+    }
+    age(who, now) {
+        return now - this.track(who).t;
+    }
+    freshest() {
+        let best = null;
+        for (const s of this.tracks.values()) {
+            if (s.t > -1e8 && (!best || s.t > best.t)) {
+                best = s;
+            }
+        }
+        return best;
+    }
+    saw(who, pos, vel, now) {
+        const s = this.track(who);
+        s.pos.copy(pos);
         if (vel) {
-            this.seen.vel.set(vel.x, 0, vel.z);
+            s.vel.set(vel.x, 0, vel.z);
         } else {
-            this.seen.vel.set(0, 0, 0);
+            s.vel.set(0, 0, 0);
         }
-        this.seen.t = now;
-        this.searched.length = 0;
+        s.t = now;
+        s.searched.length = 0;
     }
-    heard(pos, now) {
-        if (now - this.seen.t > 1.5) {
-            this.seen.pos.copy(pos);
-            this.seen.vel.set(0, 0, 0);
-            this.seen.t = now - 1.5;
-        }
-    }
-    predict(now, out) {
-        const k = Math.min(this.age(now), 2.5) * 0.8;
-        return out.copy(this.seen.pos).addScaledVector(this.seen.vel, k);
-    }
-    mark(x, z) {
-        this.searched.push({ x, z });
-        if (this.searched.length > 32) {
-            this.searched.shift();
+    heard(who, pos, now) {
+        const s = this.track(who);
+        if (now - s.t > 1.5) {
+            s.pos.copy(pos);
+            s.vel.set(0, 0, 0);
+            s.t = now - 1.5;
         }
     }
-    searchedNear(x, z, r = 3) {
-        for (const s of this.searched) {
+    shot(who, pos, now) {
+        const s = this.track(who);
+        s.shotPos.copy(pos);
+        s.shotT = now;
+    }
+    predict(who, now, out) {
+        const s = this.track(who);
+        const k = Math.min(now - s.t, 2.5) * 0.8;
+        return out.copy(s.pos).addScaledVector(s.vel, k);
+    }
+    mark(who, x, z) {
+        const list = this.track(who).searched;
+        list.push({ x, z });
+        if (list.length > 32) {
+            list.shift();
+        }
+    }
+    searchedNear(who, x, z, r = 3) {
+        for (const s of this.track(who).searched) {
             if (Math.hypot(s.x - x, s.z - z) < r) {
                 return true;
             }
@@ -212,18 +242,21 @@ class Memory {
         return false;
     }
     absorb(o) {
-        if (o.seen.t > this.seen.t) {
-            this.seen.pos.copy(o.seen.pos);
-            this.seen.vel.copy(o.seen.vel);
-            this.seen.t = o.seen.t;
-        }
-        if (o.shotFrom.t > this.shotFrom.t) {
-            this.shotFrom.pos.copy(o.shotFrom.pos);
-            this.shotFrom.t = o.shotFrom.t;
-        }
-        for (const s of o.searched) {
-            if (!this.searchedNear(s.x, s.z, 1)) {
-                this.mark(s.x, s.z);
+        for (const from of o.tracks.values()) {
+            const s = this.byId(from.id);
+            if (from.t > s.t) {
+                s.pos.copy(from.pos);
+                s.vel.copy(from.vel);
+                s.t = from.t;
+            }
+            if (from.shotT > s.shotT) {
+                s.shotPos.copy(from.shotPos);
+                s.shotT = from.shotT;
+            }
+            for (const p of from.searched) {
+                if (!this.searchedNear(s, p.x, p.z, 1)) {
+                    this.mark(s, p.x, p.z);
+                }
             }
         }
     }
@@ -244,7 +277,7 @@ class Enemy {
         this.want = new THREE.Vector3();
         this.wantS = new THREE.Vector3();
         this.strafe = false;
-        this.yaw = Math.random() * Math.PI * 2;
+        this.yaw = Rng.ai() * Math.PI * 2;
         this.faceYaw = this.yaw;
         this.yawVel = 0;
         this.visY = y;
@@ -271,14 +304,18 @@ class Enemy {
         this.alertFloor = 0;
         this.seesPlayer = false;
         this.mem = new Memory();
-        this.intel = this.mem.seen;
+        this.id = 0;
+        this.target = null;
+        this.targetT = 0;
+        this.hitBy = null;
+        this.hitT = -1e9;
         this.goal = new THREE.Vector3(x, y, z);
         this.goalSet = false;
         this.spot = new THREE.Vector3();
         this.action = null;
         this.cd = {};
-        this.senseT = Math.random() * 0.25;
-        this.thinkT = Math.random() * 0.35;
+        this.senseT = Rng.ai() * 0.25;
+        this.thinkT = Rng.ai() * 0.35;
 
         this.path = null;
         this.pathI = 0;
@@ -362,7 +399,7 @@ class Enemy {
             this.path = nav.path(here, goal);
             this.pathI = 1;
             this.goalCell = goal;
-            this.pathT = now + 0.8 + Math.random() * 0.5;
+            this.pathT = now + 0.8 + Rng.ai() * 0.5;
         }
         if (!this.path || this.pathI >= this.path.length) {
             this.steer(x, z, speed);
@@ -380,7 +417,8 @@ class Enemy {
 
     chase(speed, now) {
         const nav = Enemies.nav;
-        const P = Player.pos;
+        const T = this.target;
+        const P = T.pos;
         const dx = P.x - this.pos.x;
         const dz = P.z - this.pos.z;
         const d = Math.hypot(dx, dz);
@@ -397,7 +435,7 @@ class Enemy {
             return d;
         }
         const here = this.navCell();
-        const f = nav.flowTo(Enemies.chaseCell, now);
+        const f = nav.flowTo(T, Enemies.chaseCell, now);
         if (dy > 1 && d < (this.def.climbReach || 3.6) && this.onGround && this.cool('leap') && !this.action) {
             const viaNav = f.dist[here];
             const direct = d / nav.cs + nav.climbCost(dy);
@@ -602,7 +640,7 @@ class Enemy {
         this.onScreen = Enemies.frustum.intersectsSphere(_sphere);
         this.root.position.set(this.pos.x, this.visY, this.pos.z);
         this.root.rotation.y = this.yaw;
-        if (this.onScreen || Player.pos.distanceTo(this.pos) < 8) {
+        if (this.onScreen || Players.local.pos.distanceTo(this.pos) < 8) {
             this.animate(dt, now);
         }
     }
@@ -613,8 +651,8 @@ class Enemy {
 
     unstick() {
         this.vel.y = 6.5;
-        this.vel.x += (Math.random() - 0.5) * 3;
-        this.vel.z += (Math.random() - 0.5) * 3;
+        this.vel.x += (Rng.ai() - 0.5) * 3;
+        this.vel.z += (Rng.ai() - 0.5) * 3;
         this.onGround = false;
     }
 
@@ -718,7 +756,6 @@ class Pack {
     constructor() {
         this.members = [];
         this.mem = new Memory();
-        this.intel = this.mem.seen;
         this.anger = 0;
         this.lust = 0;
         this.base = 0.15;
@@ -731,8 +768,8 @@ class Pack {
     get aggression() {
         return clamp01(this.base + this.anger + this.lust);
     }
-    share(pos, now, vel) {
-        this.mem.saw(pos, vel, now);
+    share(who, pos, now, vel) {
+        this.mem.saw(who, pos, vel, now);
     }
 }
 
@@ -760,17 +797,29 @@ class HiveMind {
     }
 
     update(dt, now) {
+        const targets = Enemies.targets;
         this.packT -= dt;
         if (this.packT <= 0) {
             this.packT = 0.4;
-            for (let i = this.packs.length - 1; i >= 0; i--) {
-                this.assess(this.packs[i], now);
+            if (targets.length) {
+                for (let i = this.packs.length - 1; i >= 0; i--) {
+                    this.assess(this.packs[i], now);
+                }
             }
         }
         const cfg = this.cfg;
         for (const e of this.members) {
             if (e.dead) {
                 continue;
+            }
+            if (!targets.length) {
+                e.target = null;
+                e.seesPlayer = false;
+                e.stop();
+                continue;
+            }
+            if (!e.target || !targets.includes(e.target)) {
+                this.retarget(e, now);
             }
             Enemies.enterLayer(e);
             if ((e.senseT -= dt) <= 0) {
@@ -782,6 +831,56 @@ class HiveMind {
                 this.think(e, now);
             }
             this.act(e, dt, now);
+        }
+    }
+
+    retarget(e, now) {
+        const K = CONFIG.targeting;
+        const list = Enemies.targets;
+        const prev = e.target;
+        const cur = list.includes(prev) ? prev : null;
+        let best = null;
+        let bestScore = -Infinity;
+        let bestSee = 0;
+        let curSee = 0;
+        for (const p of list) {
+            const see = this.vision(e, p);
+            let score = -e.pos.distanceTo(p.pos);
+            if (see > 0) {
+                score += K.seen;
+            }
+            if (p === cur) {
+                score += K.stick;
+                curSee = see;
+            }
+            if (p === e.hitBy && now - e.hitT < K.attackerFor) {
+                score += K.attacker;
+            }
+            if (score > bestScore) {
+                best = p;
+                bestScore = score;
+                bestSee = see;
+            }
+        }
+        if (cur && best !== cur && (now < e.targetT || (e.action && e.action.lock))) {
+            return curSee;
+        }
+        if (best !== prev) {
+            e.target = best;
+            e.targetT = now + K.hold;
+            if (prev) {
+                this.onRetarget(e, prev);
+            }
+        }
+        return bestSee;
+    }
+
+    onRetarget(e) {
+        e.path = null;
+        e.pathT = 0;
+        e.thinkT = 0;
+        if (e.pack) {
+            e.pack.dirty = true;
         }
     }
 
@@ -868,6 +967,9 @@ class HiveMind {
     think() {}
     act() {}
     hear() {}
+    vision() {
+        return 0;
+    }
 }
 
 const Enemies = {
@@ -883,12 +985,11 @@ const Enemies = {
     time: 0,
     pathBudget: 0,
     chaseCell: 0,
-    chaseCells: [0, 0],
-    playerFloor: 0,
-    playerTop: false,
+    targets: [],
+    nextId: 1,
+    byId: new Map(),
     dev: false,
     overlay: true,
-    player: null,
     ready: false,
 
     register(id, def) {
@@ -909,11 +1010,6 @@ const Enemies = {
         this.junk.add(this.fx.points);
         this.frustum = new THREE.Frustum();
         this.projM = new THREE.Matrix4();
-        this.player = {
-            pos: Player.pos, aim: new THREE.Vector3(0, 0, -1), eye: new THREE.Vector3(),
-            reloading: false, zoom: 0, hpF: 1, sprinting: false
-        };
-        this.step = { t: 0, ground: true, vy: 0 };
         this.perf = { ms: 0, fps: 60, t: 0 };
 
         const hud = document.getElementById('hud');
@@ -975,6 +1071,8 @@ const Enemies = {
         this.dying.length = 0;
         this.shakeAmt = 0;
         this.list.length = 0;
+        this.byId.clear();
+        this.nextId = 1;
         this.minds = {};
         this.group = null;
         this.nav = null;
@@ -988,7 +1086,7 @@ const Enemies = {
     populate(spec) {
         const nav = this.nav;
         const count = Array.isArray(spec.count)
-            ? spec.count[0] + Math.floor(Math.random() * (spec.count[1] - spec.count[0] + 1))
+            ? spec.count[0] + Math.floor(Rng.w() * (spec.count[1] - spec.count[0] + 1))
             : spec.count || 1;
         const spawnZ = this.room.spawn.z;
         const ok = i => !nav.blocked[i] && !nav.over[i] && nav.cz(i) < spawnZ - 18 &&
@@ -1023,14 +1121,21 @@ const Enemies = {
         const mind = this.minds[type] || (this.minds[type] = def.mind(def));
         const e = def.create(def, x, y, z);
         this.group.add(e.root);
+        e.id = this.nextId++;
+        this.byId.set(e.id, e);
         this.list.push(e);
         mind.add(e);
         e.root.position.copy(e.pos);
         return e;
     },
 
+    get(id) {
+        return this.byId.get(id) || null;
+    },
+
     remove(e) {
         e.dead = true;
+        this.byId.delete(e.id);
         if (e.root.parent) {
             e.root.parent.remove(e.root);
         }
@@ -1042,6 +1147,7 @@ const Enemies = {
 
     kill(e) {
         e.dead = true;
+        this.byId.delete(e.id);
         e.dropBatch();
         if (e.mind) {
             e.mind.remove(e);
@@ -1052,7 +1158,7 @@ const Enemies = {
     },
 
     shake(amount, pos) {
-        const d = pos ? pos.distanceTo(Player.pos) : 0;
+        const d = pos ? pos.distanceTo(Players.local.pos) : 0;
         const k = amount * clamp01(1 - d / 14);
         if (k > this.shakeAmt) {
             this.shakeAmt = k;
@@ -1088,7 +1194,8 @@ const Enemies = {
         this.time += dt;
         const now = this.time;
         this.pathBudget = 3;
-        this.readPlayer(dt);
+        this.targets = Players.active();
+        this.readPlayers(dt);
         this.projM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
         this.frustum.setFromProjectionMatrix(this.projM);
 
@@ -1137,7 +1244,8 @@ const Enemies = {
         if (!nav) {
             return;
         }
-        let low = !this.playerTop;
+        const T = (e && e.target) || this.targets[0];
+        let low = !(T && T.nav.top);
         if (low && e) {
             const c = nav.cell(e.pos.x, e.pos.z);
             if (e.pos.y > nav.hLow[c] + 1.2) {
@@ -1145,56 +1253,51 @@ const Enemies = {
             }
         }
         nav.setLayer(low);
-        this.chaseCell = this.chaseCells[low ? 1 : 0];
+        this.chaseCell = T ? T.nav.cells[low ? 1 : 0] : 0;
     },
 
-    readPlayer(dt) {
-        const P = this.player;
-        const w = Arsenal.current;
-        camera.getWorldDirection(P.aim);
-        P.eye.set(Player.pos.x, Player.pos.y + CONFIG.eye, Player.pos.z);
-        P.reloading = !!(w && w.reloading);
-        P.zoom = w ? w.zoom : 0;
-        P.weapon = w ? w.id : '';
-        P.hpF = Vitals.hp / Vitals.max;
-        const sp = Math.hypot(Player.vel.x, Player.vel.z);
-        P.sprinting = sp > CONFIG.walk + 0.5;
-
+    readPlayers(dt) {
         const nav = this.nav;
-        const c0 = nav.cell(Player.pos.x, Player.pos.z);
-        const py = Player.onGround ? Player.pos.y : this.floorAt(Player.pos.x, Player.pos.y, Player.pos.z);
-        this.playerFloor = py;
-        this.playerTop = !!nav.deck[c0] && py > nav.hTop[c0] - 1.2;
-        for (const low of [false, true]) {
-            nav.setLayer(low);
-            let c = c0;
-            if (nav.blocked[c] || nav.over[c] || Math.abs(py - nav.h[c]) > 1.2) {
-                let n = nav.nearest(Player.pos.x, Player.pos.z, i => nav.open(i) && !nav.over[i] && Math.abs(nav.h[i] - py) < 1.2, 10);
-                if (n < 0) {
-                    n = nav.nearest(Player.pos.x, Player.pos.z, i => nav.open(i) && !nav.over[i], 10);
+        for (const P of this.targets) {
+            const pos = P.pos;
+            const c0 = nav.cell(pos.x, pos.z);
+            const py = P.onGround ? pos.y : this.floorAt(pos.x, pos.y, pos.z);
+            P.nav.floor = py;
+            P.nav.top = !!nav.deck[c0] && py > nav.hTop[c0] - 1.2;
+            for (const low of [false, true]) {
+                nav.setLayer(low);
+                let c = c0;
+                if (nav.blocked[c] || nav.over[c] || Math.abs(py - nav.h[c]) > 1.2) {
+                    let n = nav.nearest(pos.x, pos.z, i => nav.open(i) && !nav.over[i] && Math.abs(nav.h[i] - py) < 1.2, 10);
+                    if (n < 0) {
+                        n = nav.nearest(pos.x, pos.z, i => nav.open(i) && !nav.over[i], 10);
+                    }
+                    if (n >= 0) {
+                        c = n;
+                    }
                 }
-                if (n >= 0) {
-                    c = n;
-                }
+                P.nav.cells[low ? 1 : 0] = c;
             }
-            this.chaseCells[low ? 1 : 0] = c;
         }
         this.enterLayer(null);
 
-        const s = this.step;
-        if (Player.onGround) {
-            if (!s.ground && s.vy < -9) {
-                this.noise(Player.pos, 9, 'land');
+        for (const P of this.targets) {
+            const s = P.step;
+            const sp = Math.hypot(P.vel.x, P.vel.z);
+            if (P.onGround) {
+                if (!s.ground && s.vy < -9) {
+                    this.noise(P.pos, 9, 'land', null, P);
+                }
+                s.t -= dt * sp;
+                if (sp > 1 && s.t <= 0) {
+                    s.t = 1.7;
+                    this.noise(P.pos, P.sprinting ? 14 : 5, 'step', null, P);
+                }
+            } else {
+                s.vy = P.vel.y;
             }
-            s.t -= dt * sp;
-            if (sp > 1 && s.t <= 0) {
-                s.t = 1.7;
-                this.noise(Player.pos, P.sprinting ? 14 : 5, 'step');
-            }
-        } else {
-            s.vy = Player.vel.y;
+            s.ground = P.onGround;
         }
-        s.ground = Player.onGround;
     },
 
     separate() {
@@ -1222,20 +1325,24 @@ const Enemies = {
                     b.vel.z += dz / d * push;
                 }
             }
-            const dx = Player.pos.x - a.pos.x;
-            const dz = Player.pos.z - a.pos.z;
-            const min = a.radius + CONFIG.radius + 0.05;
-            const d2 = dx * dx + dz * dz;
-            if (d2 < min * min && d2 > 1e-6 && Math.abs(Player.pos.y - a.pos.y) < 1.4) {
-                const d = Math.sqrt(d2);
-                const o = min - d;
-                a.vel.x -= dx / d * o * 4;
-                a.vel.z -= dz / d * o * 4;
-                const p = _ev2.copy(Player.pos);
-                p.x += dx / d * o * 0.6;
-                p.z += dz / d * o * 0.6;
-                if (!Player.hits(p)) {
-                    Player.pos.copy(p);
+            for (const P of this.targets) {
+                const dx = P.pos.x - a.pos.x;
+                const dz = P.pos.z - a.pos.z;
+                const min = a.radius + CONFIG.radius + 0.05;
+                const d2 = dx * dx + dz * dz;
+                if (d2 < min * min && d2 > 1e-6 && Math.abs(P.pos.y - a.pos.y) < 1.4) {
+                    const d = Math.sqrt(d2);
+                    const o = min - d;
+                    a.vel.x -= dx / d * o * 4;
+                    a.vel.z -= dz / d * o * 4;
+                    if (P.local) {
+                        const p = _ev2.copy(Player.pos);
+                        p.x += dx / d * o * 0.6;
+                        p.z += dz / d * o * 0.6;
+                        if (!Player.hits(p)) {
+                            Player.pos.copy(p);
+                        }
+                    }
                 }
             }
         }
@@ -1256,7 +1363,7 @@ const Enemies = {
             o = o.parent;
         }
         if (e && !e.dead) {
-            const from = shot.origin || this.player.eye;
+            const from = shot.origin || (shot.by || Players.local).eye;
             const dir = _ev2.copy(hit.point).sub(from).normalize().clone();
             if (this.blast && this.blast.shot === shot) {
                 let list = this.blast.by.get(e);
@@ -1271,7 +1378,7 @@ const Enemies = {
             return;
         }
         if (this.nav) {
-            this.noise(hit.point, 7, 'impact', shot.origin || Player.pos);
+            this.noise(hit.point, 7, 'impact', shot.origin || (shot.by || Players.local).pos, shot.by || Players.local);
         }
     },
 
@@ -1301,10 +1408,11 @@ const Enemies = {
             return;
         }
         const loud = { shotgun: 42, rifle: 34, pistols: 28, sniper: 58 }[shot.weapon] || 32;
-        this.noise(Player.pos, loud, 'shot');
+        const by = shot.by || Players.local;
+        this.noise(by.pos, loud, 'shot', null, by);
     },
 
-    noise(pos, radius, kind, src) {
+    noise(pos, radius, kind, src, by) {
         for (const e of this.list) {
             if (e.dead) {
                 continue;
@@ -1312,7 +1420,7 @@ const Enemies = {
             const r = radius * (e.def.hearing || 1);
             const d = e.pos.distanceTo(pos);
             if (d < r) {
-                e.mind.hear(e, { pos, src: src || pos, loud: 1 - d / r, kind }, this.time);
+                e.mind.hear(e, { pos, src: src || pos, loud: 1 - d / r, kind, by: by || null }, this.time);
             }
         }
     },
@@ -1827,15 +1935,16 @@ const DevView = {
             d.label.style.top = ((1 - _ev.y) / 2 * h) + 'px';
             d.label.style.borderLeftColor = e.engaged ? '#ff3b4e' : e.alert > 0.05 ? '#ffd34d' : '#46ffc8';
             const txt = e.debugText(now);
-            const lines = e.pos.distanceTo(Player.pos) < 12 ? txt : txt.split('\n').slice(0, 2).join('\n');
+            const lines = e.pos.distanceTo(Players.local.pos) < 12 ? txt : txt.split('\n').slice(0, 2).join('\n');
             d.label.textContent = note ? lines + '\n' + note : lines;
-            d.label.style.zIndex = String(1000 - Math.round(e.pos.distanceTo(Player.pos)));
+            d.label.style.zIndex = String(1000 - Math.round(e.pos.distanceTo(Players.local.pos)));
         }
 
         let k = 0;
         for (const id in E.minds) {
             for (const p of E.minds[id].packs) {
-                if (!p.mem.known()) {
+                const tr = p.mem.freshest();
+                if (!tr) {
                     continue;
                 }
                 let m = this.packMarks[k];
@@ -1845,8 +1954,8 @@ const DevView = {
                     this.packMarks.push(m);
                 }
                 m.seen.visible = m.guess.visible = true;
-                m.seen.position.copy(p.mem.seen.pos).y += 1;
-                p.mem.predict(now, m.guess.position).y += 1;
+                m.seen.position.copy(tr.pos).y += 1;
+                p.mem.predict(tr, now, m.guess.position).y += 1;
                 m.seen.rotation.y = m.guess.rotation.y = now * 2;
                 k++;
             }

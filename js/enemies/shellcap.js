@@ -320,8 +320,9 @@ class Shellcap extends Enemy {
     constructor(def, x, y, z) {
         super(def, x, y, z);
         ShellcapKit.build();
-        this.seed = Math.random() * 100;
+        this.seed = Rng.ai() * 100;
         this.plates = [];
+        this.parts = [];
         this.shields = [null, null];
         this.fleshMeshes = [];
         this.glowMeshes = [];
@@ -344,13 +345,13 @@ class Shellcap extends Enemy {
         this.recall = false;
         this.fxT = 0;
         this.swipeSide = 0;
-        this.side = Math.random() < 0.5 ? 1 : -1;
+        this.side = Rng.ai() < 0.5 ? 1 : -1;
         this.arcT = 0;
         this.weaveT = 0;
         this.anticT = 0;
         this.lurkT = 0;
         this.spotT = 0;
-        this.idleT = Math.random() * 3;
+        this.idleT = Rng.ai() * 3;
         this.searchT = 0;
         this.searchStage = 0;
         this.searchPause = 0;
@@ -392,6 +393,10 @@ class Shellcap extends Enemy {
             m.userData.base = mat;
             if (part) {
                 m.userData.part = part;
+                if (!part.plate) {
+                    part.id = this.parts.length;
+                    this.parts.push(m);
+                }
             }
             parent.add(m);
             return m;
@@ -419,7 +424,7 @@ class Shellcap extends Enemy {
                 if (o.rot) {
                     m.rotation.fromArray(o.rot);
                 }
-                m.userData.part = { plate: pl };
+                m.userData.part = { plate: pl, id: pl.name };
                 for (const [g, kind] of o.extras || []) {
                     const mat = kind === 'glow' ? M.glow[this.mood] : M.shell;
                     const c = new THREE.Mesh(ShellcapKit.get(g.userData.scKey), mat);
@@ -509,6 +514,14 @@ class Shellcap extends Enemy {
         this.skeleton = new THREE.Skeleton(bones);
     }
 
+    partById(id) {
+        if (typeof id === 'string') {
+            const pl = this.plates.find(p => p.name === id);
+            return pl ? { part: { plate: pl, id }, mesh: pl.mesh } : null;
+        }
+        const m = this.parts[id];
+        return m ? { part: m.userData.part, mesh: m } : null;
+    }
     shellLeft() {
         let hp = 0;
         let max = 0;
@@ -549,13 +562,15 @@ class Shellcap extends Enemy {
     debugText(now) {
         const p = this.pack;
         const mem = p ? p.mem : this.mem;
+        const T = this.target;
         const sp = Math.hypot(this.vel.x, this.vel.z);
         const lines = [
-            `SHELLCAP  ${this.intent}${this.role ? ' / ' + this.role : ''}${p ? `   pack ${p.mood} x${p.members.length}` : '   alone'}`,
+            `SHELLCAP #${this.id}  ${this.intent}${this.role ? ' / ' + this.role : ''}${p ? `   pack ${p.mood} x${p.members.length}` : '   alone'}` +
+                (Players.list.length > 1 ? `   target ${T ? T.name || T.id : 'none'}` : ''),
             `> ${this.thought}`,
             `hp ${Math.ceil(this.hp)}/${this.maxHp}  shell ${Math.round(this.shellLeft() * 100)}%  shields ${this.shieldsLeft()}/2${this.dr ? `  dr ${Math.round(this.dr * 100)}%` : ''}`,
             `speed ${sp.toFixed(1)} ${this.gaitRun ? 'gallop' : 'walk'}  alert ${Math.round(this.alert * 100)}%${this.alertFloor ? ' (prowling)' : ''}  ${this.seesPlayer ? 'SEES YOU' : ''}`,
-            mem.known() ? `memory: saw you ${mem.age(now).toFixed(1)}s ago, searched ${mem.searched.length} spots` : 'memory: never seen you'
+            T && mem.known(T) ? `memory: saw you ${mem.age(T, now).toFixed(1)}s ago, searched ${mem.track(T).searched.length} spots` : 'memory: never seen you'
         ];
         return lines.join('\n');
     }
@@ -563,6 +578,10 @@ class Shellcap extends Enemy {
     takeHit(amount, part, hit, dir, shot) {
         if (this.dead) {
             return null;
+        }
+        if (shot && shot.by) {
+            this.hitBy = shot.by;
+            this.hitT = Enemies.time;
         }
         const fx = Enemies.fx;
         const pl = part && part.plate;
@@ -605,7 +624,7 @@ class Shellcap extends Enemy {
         if (shot && shot.weapon === 'sniper') {
             this.stagger(1, dir);
         }
-        this.mind.onHurt(this, { plate: pl, zone, dmg, dir, flesh: !pl && !!part && part.zone !== 'limb' }, Enemies.time);
+        this.mind.onHurt(this, { plate: pl, zone, dmg, dir, by: shot && shot.by, flesh: !pl && !!part && part.zone !== 'limb' }, Enemies.time);
         return kind;
     }
 
@@ -613,10 +632,14 @@ class Shellcap extends Enemy {
         if (this.dead) {
             return null;
         }
+        if (shot.by) {
+            this.hitBy = shot.by;
+            this.hitT = Enemies.time;
+        }
         const fx = Enemies.fx;
         const vs = SHELL_VS[shot.weapon] || [1, 0.3];
         this.lastHeavy = hits.length >= 3;
-        const close = clampN(1.4 - this.pos.distanceTo(Player.pos) * 0.07, 1, 1.3);
+        const close = clampN(1.4 - this.pos.distanceTo((shot.by || Players.local).pos) * 0.07, 1, 1.3);
         const amount = shot.damage * close;
         const dir = new THREE.Vector3();
         const rank = { shell: 1, flesh: 2, break: 3, crit: 4 };
@@ -670,7 +693,7 @@ class Shellcap extends Enemy {
             return 'kill';
         }
         this.stagger(clampN(hits.length / 6, 0.3, 1), dir);
-        this.mind.onHurt(this, { plate: worst, zone: worst ? worst.zone : zone, dmg, dir, flesh: !worst }, Enemies.time);
+        this.mind.onHurt(this, { plate: worst, zone: worst ? worst.zone : zone, dmg, dir, by: shot.by, flesh: !worst }, Enemies.time);
         return kind;
     }
 
@@ -1204,7 +1227,7 @@ class Shellcap extends Enemy {
 
     dropOff(cells, i) {
         const nav = Enemies.nav;
-        const P = Player.pos;
+        const P = this.target ? this.target.pos : this.pos;
         if (!this.engaged || !this.cool('dive') || Math.hypot(P.x - this.pos.x, P.z - this.pos.z) < 9) {
             return false;
         }
@@ -1239,8 +1262,8 @@ class Shellcap extends Enemy {
             return;
         }
         this.vel.y = 3.5;
-        this.vel.x += (Math.random() - 0.5) * 3;
-        this.vel.z += (Math.random() - 0.5) * 3;
+        this.vel.x += (Rng.ai() - 0.5) * 3;
+        this.vel.z += (Rng.ai() - 0.5) * 3;
         this.onGround = false;
     }
 
@@ -1505,10 +1528,10 @@ class Shellcap extends Enemy {
         }
 
         _sv.set(p.x, p.y + this.height * 0.5, p.z);
-        this.onScreen = Enemies.frustum.containsPoint(_sv) || p.distanceTo(Player.pos) < 8;
+        this.onScreen = Enemies.frustum.containsPoint(_sv) || p.distanceTo(Players.local.pos) < 8;
         this.root.position.copy(p);
         this.root.rotation.y = this.yaw;
-        if (this.onScreen || Player.pos.distanceTo(p) < 8) {
+        if (this.onScreen || Players.local.pos.distanceTo(p) < 8) {
             this.animate(dt, now);
         }
         if (t >= e[4]) {
@@ -1703,10 +1726,10 @@ class Shellcap extends Enemy {
             tx = a.from.x;
             ty = a.from.y + 1.2;
             tz = a.from.z;
-        } else if (this.seesPlayer && an !== 'dying') {
-            tx = Player.pos.x;
-            ty = Player.pos.y + 1.6;
-            tz = Player.pos.z;
+        } else if (this.seesPlayer && this.target && an !== 'dying') {
+            tx = this.target.pos.x;
+            ty = this.target.pos.y + 1.6;
+            tz = this.target.pos.z;
         } else if (this.goalSet && (this.intent === 'investigate' || this.intent === 'search')) {
             tx = this.goal.x;
             ty = this.goal.y + 1;
@@ -2101,9 +2124,9 @@ class Shellcap extends Enemy {
 }
 
 class ShellcapMind extends HiveMind {
-    vision(e) {
+    vision(e, T) {
         const cfg = this.cfg;
-        const P = Player.pos;
+        const P = T.pos;
         const dx = P.x - e.pos.x;
         const dz = P.z - e.pos.z;
         const hd = Math.hypot(dx, dz);
@@ -2130,20 +2153,20 @@ class ShellcapMind extends HiveMind {
         }
         const centre = inCone ? (dot - cosH) / (1 - cosH) : 0.3;
         let s = (1 - d / cfg.sight) * (0.4 + 0.6 * centre) * (0.5 + parts / 6);
-        if (Enemies.player.sprinting) {
+        if (T.sprinting) {
             s *= 1.4;
         }
         return Math.max(0.1, s);
     }
 
     aimedAt(e, k) {
-        const P = Enemies.player;
+        const P = e.target;
         _sv.set(e.pos.x, e.pos.y + 1, e.pos.z).sub(P.eye).normalize();
         return _sv.dot(P.aim) > k;
     }
 
     lookingAway(e) {
-        const P = Enemies.player;
+        const P = e.target;
         const dx = e.pos.x - P.pos.x;
         const dz = e.pos.z - P.pos.z;
         const d = Math.hypot(dx, dz) || 1;
@@ -2152,19 +2175,19 @@ class ShellcapMind extends HiveMind {
     }
 
     sense(e, now) {
-        const P = Enemies.player;
-        const s = this.vision(e);
+        const s = this.retarget(e, now);
+        const P = e.target;
         e.seesPlayer = s > 0;
         if (s > 0) {
-            e.mem.saw(Player.pos, Player.vel, now);
+            e.mem.saw(P, P.pos, P.vel, now);
             if (e.engaged) {
                 if (e.pack) {
-                    e.pack.share(Player.pos, now, Player.vel);
+                    e.pack.share(P, P.pos, now, P.vel);
                 }
                 if (e.intent === 'search') {
                     e.thinkT = 0;
                 }
-                if (P.zoom > 0.5 && this.aimedAt(e, 0.996) && e.cool('dodge') && e.onGround && !e.action && Math.random() < 0.35) {
+                if (P.zoom > 0.5 && this.aimedAt(e, 0.996) && e.cool('dodge') && e.onGround && !e.action && Rng.ai() < 0.35) {
                     this.dodge(e, 'scope on me - dodging');
                 }
             } else {
@@ -2182,14 +2205,19 @@ class ShellcapMind extends HiveMind {
 
     hear(e, n, now) {
         const src = n.src;
+        const who = n.by || e.target;
         const err = e.pos.distanceTo(src) * 0.15 * (1 - n.loud * 0.6);
-        _sv2.set(src.x + (Math.random() - 0.5) * 2 * err, src.y, src.z + (Math.random() - 0.5) * 2 * err);
-        e.mem.heard(_sv2, now);
+        _sv2.set(src.x + (Rng.ai() - 0.5) * 2 * err, src.y, src.z + (Rng.ai() - 0.5) * 2 * err);
+        e.mem.heard(who, _sv2, now);
         if (e.engaged) {
             if (e.pack) {
-                e.pack.mem.heard(_sv2, now);
+                e.pack.mem.heard(who, _sv2, now);
             }
             return;
+        }
+        if (who !== e.target) {
+            e.target = who;
+            e.targetT = now + CONFIG.targeting.hold;
         }
         const gain = n.kind === 'shot' ? 1.3 : n.kind === 'impact' ? 0.9 : n.kind === 'land' ? 0.6 : 0.4;
         e.alert = Math.min(1, e.alert + n.loud * gain * (e.alertFloor > 0 ? 1.5 : 1) + 0.08);
@@ -2204,6 +2232,21 @@ class ShellcapMind extends HiveMind {
             e.searchT = 0;
             e.thought = 'heard a ' + n.kind + ' - investigating';
             e.face(_sv2.x, _sv2.z);
+        }
+    }
+
+    onRetarget(e, prev) {
+        super.onRetarget(e, prev);
+        e.flankDone = false;
+        e.arcT = 0;
+        e.spotT = 0;
+        e.lurkT = 0;
+        if (e.intent !== 'retreat' && e.intent !== 'regen') {
+            e.goalSet = false;
+        }
+        if (e.intent === 'search') {
+            e.searchStage = 0;
+            e.searchPause = 0;
         }
     }
 
@@ -2227,7 +2270,7 @@ class ShellcapMind extends HiveMind {
             e.thought = why + ' - kin is already calling';
             return;
         }
-        const quick = e.pos.distanceTo(Player.pos) < 5 || (e.pack && e.pack.hunting);
+        const quick = e.pos.distanceTo(e.target.pos) < 5 || (e.pack && e.pack.hunting);
         this.call(e, quick);
         e.thought = why + ' - calling the hive';
     }
@@ -2271,7 +2314,10 @@ class ShellcapMind extends HiveMind {
         p.engaged = true;
         p.hunting = true;
         p.anger = Math.min(0.9, p.anger + 0.3);
-        p.share(Player.pos, now, Player.vel);
+        const killer = e.hitBy || e.target;
+        if (killer) {
+            p.share(killer, killer.pos, now, killer.vel);
+        }
         p.dirty = true;
         for (const m of p.members) {
             if (m !== e && !(m.action && m.action.lock)) {
@@ -2294,24 +2340,26 @@ class ShellcapMind extends HiveMind {
             return;
         }
         const cfg = this.cfg;
-        const P = Enemies.player;
-        const moving = Math.hypot(Player.vel.x, Player.vel.z) > 1.5;
-        const age = p.mem.age(now);
-        if (age > cfg.lostAfter && moving && now > (p.tremorT || 0) && p.members.some(m => m.pos.distanceTo(Player.pos) < cfg.tremorRange)) {
-            p.tremorT = now + cfg.tremorEvery;
-            const err = 3 + Math.random() * 4;
-            _sv2.set(Player.pos.x + (Math.random() - 0.5) * 2 * err, Player.pos.y, Player.pos.z + (Math.random() - 0.5) * 2 * err);
-            p.mem.saw(_sv2, null, now - cfg.lostAfter + 1.5);
-            for (const m of p.members) {
-                if (m.intent === 'search') {
-                    m.searchStage = 0;
-                    m.goalSet = false;
-                    m.searchPause = 0;
-                    m.thought = 'felt your footsteps through the mycelium';
+        const targets = Enemies.targets;
+        for (const T of targets) {
+            const moving = Math.hypot(T.vel.x, T.vel.z) > 1.5;
+            if (p.mem.age(T, now) > cfg.lostAfter && moving && now > (p.tremorT || 0) && p.members.some(m => m.pos.distanceTo(T.pos) < cfg.tremorRange)) {
+                p.tremorT = now + cfg.tremorEvery;
+                const err = 3 + Rng.ai() * 4;
+                _sv2.set(T.pos.x + (Rng.ai() - 0.5) * 2 * err, T.pos.y, T.pos.z + (Rng.ai() - 0.5) * 2 * err);
+                p.mem.saw(T, _sv2, null, now - cfg.lostAfter + 1.5);
+                for (const m of p.members) {
+                    if (m.intent === 'search' && m.target === T) {
+                        m.searchStage = 0;
+                        m.goalSet = false;
+                        m.searchPause = 0;
+                        m.thought = 'felt your footsteps through the mycelium';
+                    }
                 }
             }
         }
-        if (p.mem.age(now) > cfg.searchFor) {
+        const fresh = p.mem.freshest();
+        if (!fresh || now - fresh.t > cfg.searchFor) {
             for (const m of p.members) {
                 this.standDown(m);
             }
@@ -2324,12 +2372,12 @@ class ShellcapMind extends HiveMind {
         }
         p.anger = Math.max(0, p.anger - 0.008);
         p.lust = Math.max(0, p.lust - 0.006);
-        if (P.hpF < 0.35) {
+        if (targets.some(T => T.hpF < 0.35)) {
             p.lust = Math.min(0.8, p.lust + 0.06);
         }
         let close = 0;
         for (const m of p.members) {
-            if (m.engaged && m.pos.distanceTo(Player.pos) < 10) {
+            if (m.engaged && m.target && m.pos.distanceTo(m.target.pos) < 10) {
                 close++;
             }
         }
@@ -2356,7 +2404,7 @@ class ShellcapMind extends HiveMind {
         e.alertFloor = 0.35;
         e.alert = 0.35;
         e.intent = 'idle';
-        e.idleT = 1 + Math.random() * 2;
+        e.idleT = 1 + Rng.ai() * 2;
         e.goalSet = false;
         e.role = null;
         e.blockT = 0;
@@ -2365,12 +2413,29 @@ class ShellcapMind extends HiveMind {
     }
 
     assignRoles(p) {
-        const ip = p.mem.seen.pos;
-        const fighters = p.members.filter(m => m.engaged && m.intent !== 'retreat' && m.intent !== 'regen');
+        const side = Rng.ai() < 0.5 ? 1 : -1;
+        const groups = new Map();
+        for (const m of p.members) {
+            if (m.engaged && m.target && m.intent !== 'retreat' && m.intent !== 'regen') {
+                let list = groups.get(m.target);
+                if (!list) {
+                    groups.set(m.target, list = []);
+                }
+                list.push(m);
+            }
+        }
+        for (const [T, fighters] of groups) {
+            this.assignGroup(p, T, fighters, side);
+        }
+        p.dirty = false;
+        p.roleT = 3;
+    }
+
+    assignGroup(p, T, fighters, side) {
+        const ip = p.mem.track(T).pos;
         fighters.sort((a, b) => a.pos.distanceToSquared(ip) - b.pos.distanceToSquared(ip));
         const n = fighters.length;
         const rushers = p.mood === 'bloodlust' || n < 2 ? n : Math.max(1, Math.round(n / 3));
-        let side = Math.random() < 0.5 ? 1 : -1;
         fighters.forEach((m, i) => {
             const prev = m.role;
             if (i < rushers) {
@@ -2391,8 +2456,6 @@ class ShellcapMind extends HiveMind {
                 m.spotT = 0;
             }
         });
-        p.dirty = false;
-        p.roleT = 3;
     }
 
     allies(e) {
@@ -2419,14 +2482,14 @@ class ShellcapMind extends HiveMind {
         }
         const cfg = this.cfg;
         const p = e.pack;
-        const P = Enemies.player;
+        const P = e.target;
         const mem = this.memOf(e);
         const allies = this.allies(e);
         const lone = allies === 0;
         const aggr = p ? p.aggression : 0.5;
         const mood = p ? p.mood : 'hunting';
         const hpF = e.hp / e.maxHp;
-        const dP = e.pos.distanceTo(Player.pos);
+        const dP = e.pos.distanceTo(P.pos);
         const healing = e.intent === 'regen' || e.intent === 'retreat';
 
         if (lone && healing) {
@@ -2435,7 +2498,7 @@ class ShellcapMind extends HiveMind {
             e.thought = 'no kin left to cover me - fighting';
         }
 
-        if (!e.seesPlayer && mem.age(now) > cfg.lostAfter && !(healing && !lone)) {
+        if (!e.seesPlayer && mem.age(P, now) > cfg.lostAfter && !(healing && !lone)) {
             if (e.intent !== 'search') {
                 e.intent = 'search';
                 e.searchStage = 0;
@@ -2446,7 +2509,7 @@ class ShellcapMind extends HiveMind {
         }
         if (lone) {
             e.intent = 'chase';
-            e.thought = mem.age(now) < 0.8 ? (dP < cfg.directRange ? 'alone - going straight for you' : 'alone - circling in')
+            e.thought = mem.age(P, now) < 0.8 ? (dP < cfg.directRange ? 'alone - going straight for you' : 'alone - circling in')
                 : 'chasing where you went';
             return;
         }
@@ -2489,7 +2552,7 @@ class ShellcapMind extends HiveMind {
             e.fallBand = band;
             const someoneHealing = p.members.some(m => m !== e && !m.dead && (m.intent === 'retreat' || m.intent === 'regen'));
             const nerve = (P.reloading ? 0.2 : 0) + (P.hpF < 0.3 ? 0.35 : 0);
-            if ((mood !== 'bloodlust' || hpF < 0.3) && !someoneHealing && Math.random() < cfg.fallBackChance - nerve) {
+            if ((mood !== 'bloodlust' || hpF < 0.3) && !someoneHealing && Rng.ai() < cfg.fallBackChance - nerve) {
                 e.intent = 'retreat';
                 e.retreatTries = 0;
                 this.pickRetreat(e);
@@ -2500,7 +2563,7 @@ class ShellcapMind extends HiveMind {
             e.thought = `hurt ${Math.round(hpF * 100)}% - ` + (someoneHealing ? 'kin is already healing, fighting on' : 'fighting on');
         }
 
-        const kinOnYou = p.members.some(m => m !== e && !m.dead && m.pos.distanceTo(Player.pos) < 2.8);
+        const kinOnYou = p.members.some(m => m !== e && !m.dead && m.pos.distanceTo(P.pos) < 2.8);
         const opening = P.reloading ? 'you are reloading' : P.hpF < 0.3 ? 'you are weak' : kinOnYou ? 'kin has you engaged' : null;
         if (opening && dP < 10 && e.role !== 'rush') {
             e.intent = 'rush';
@@ -2580,7 +2643,8 @@ class ShellcapMind extends HiveMind {
         const lone = this.allies(e) === 0;
         const aggr = p ? p.aggression : 0.4;
         const run = cfg.run * (1 + 0.2 * aggr) * (lust ? cfg.lustSpeed : 1);
-        const P = Player.pos;
+        const T = e.target;
+        const P = T.pos;
         const mem = this.memOf(e);
         const dP = e.pos.distanceTo(P);
 
@@ -2588,8 +2652,8 @@ class ShellcapMind extends HiveMind {
             case 'idle':
                 e.stop();
                 e.idleT -= dt;
-                if (e.alert > 0.25 && mem.known()) {
-                    e.face(mem.seen.pos.x, mem.seen.pos.z);
+                if (e.alert > 0.25 && mem.known(T)) {
+                    e.face(mem.track(T).pos.x, mem.track(T).pos.z);
                 } else {
                     e.faceYaw += Math.sin(now * 0.6 + e.seed) * dt * 0.5;
                 }
@@ -2603,7 +2667,7 @@ class ShellcapMind extends HiveMind {
                 e.goalT += dt;
                 if (e.navTo(e.goal.x, e.goal.z, e.alertFloor > 0 ? cfg.prowl : cfg.walk, now) < 0.8 || e.goalT > 15) {
                     e.intent = 'idle';
-                    e.idleT = 1.5 + Math.random() * 3;
+                    e.idleT = 1.5 + Rng.ai() * 3;
                     e.goalSet = false;
                 }
                 break;
@@ -2623,7 +2687,7 @@ class ShellcapMind extends HiveMind {
                     e.thought = 'circling - waiting for a gap';
                     break;
                 }
-                if (e.seesPlayer || mem.age(now) < 0.8) {
+                if (e.seesPlayer || mem.age(T, now) < 0.8) {
                     if (dP > cfg.directRange && Math.abs(P.y - e.pos.y) < 1.5) {
                         this.approach(e, run, now);
                     } else {
@@ -2632,7 +2696,7 @@ class ShellcapMind extends HiveMind {
                     }
                     this.melee(e);
                 } else {
-                    mem.predict(now, e.goal);
+                    mem.predict(T, now, e.goal);
                     e.goalSet = true;
                     e.navTo(e.goal.x, e.goal.z, run, now);
                 }
@@ -2690,9 +2754,9 @@ class ShellcapMind extends HiveMind {
             const bare = e.faceBare();
             const aimed = this.aimedAt(e, bare ? 0.96 : 0.975);
             e.anticT = now + (bare ? 0.35 : 0.5);
-            if (Math.random() < (aimed ? (bare ? 0.8 : 0.45) : (bare ? 0.25 : 0.05))) {
+            if (Rng.ai() < (aimed ? (bare ? 0.8 : 0.45) : (bare ? 0.25 : 0.05))) {
                 this.guard(e, 'high', aimed ? (bare ? 'face is bare and you are aiming at it - covering up' : 'you are aiming at me - shields up') : 'bracing behind my fists', true);
-                e.blockT = bare ? 1.4 + Math.random() * 0.8 : 1 + Math.random() * 0.6;
+                e.blockT = bare ? 1.4 + Rng.ai() * 0.8 : 1 + Rng.ai() * 0.6;
             }
         }
 
@@ -2715,6 +2779,8 @@ class ShellcapMind extends HiveMind {
 
     search(e, dt, now, mem, run) {
         const cfg = this.cfg;
+        const T = e.target;
+        const seen = mem.track(T).pos;
         if (e.searchPause > 0) {
             e.searchPause -= dt;
             e.stop();
@@ -2724,16 +2790,16 @@ class ShellcapMind extends HiveMind {
         }
         const claimed = (x, z) => !!e.pack && e.pack.members.some(m => m !== e && m.intent === 'search' && m.goalSet &&
             Math.hypot(m.goal.x - x, m.goal.z - z) < 3);
-        if (e.goalSet && e.searchStage < 2 && e.goalT > 0.5 && mem.searchedNear(e.goal.x, e.goal.z, 2)) {
+        if (e.goalSet && e.searchStage < 2 && e.goalT > 0.5 && mem.searchedNear(T, e.goal.x, e.goal.z, 2)) {
             e.goalSet = false;
             e.searchStage++;
         }
         if (!e.goalSet) {
             e.goalT = 0;
-            if (e.searchStage === 0 && !mem.searchedNear(mem.seen.pos.x, mem.seen.pos.z) && !claimed(mem.seen.pos.x, mem.seen.pos.z)) {
-                e.goal.copy(mem.seen.pos);
+            if (e.searchStage === 0 && !mem.searchedNear(T, seen.x, seen.z) && !claimed(seen.x, seen.z)) {
+                e.goal.copy(seen);
                 e.thought = 'running to where I last sensed you';
-            } else if (e.searchStage <= 1 && !mem.searchedNear(mem.predict(now, _sv2).x, _sv2.z) && !claimed(_sv2.x, _sv2.z)) {
+            } else if (e.searchStage <= 1 && !mem.searchedNear(T, mem.predict(T, now, _sv2).x, _sv2.z) && !claimed(_sv2.x, _sv2.z)) {
                 e.goal.copy(_sv2);
                 e.searchStage = 1;
                 e.thought = 'running to where you were heading';
@@ -2747,23 +2813,23 @@ class ShellcapMind extends HiveMind {
         e.goalT += dt;
         const speed = e.searchStage < 2 ? run * 0.9 : cfg.jog;
         if (e.navTo(e.goal.x, e.goal.z, speed, now) < 1.3 || e.goalT > 12) {
-            mem.mark(e.goal.x, e.goal.z);
+            mem.mark(T, e.goal.x, e.goal.z);
             e.searchStage++;
             e.goalSet = false;
-            e.searchPause = 0.6 + Math.random() * 0.7;
+            e.searchPause = 0.6 + Rng.ai() * 0.7;
         }
     }
 
     pickSweep(e, mem, now) {
         const nav = Enemies.nav;
-        const c = mem.predict(now, _sv2);
-        const from = mem.seen.pos;
+        const c = mem.predict(e.target, now, _sv2);
+        const from = mem.track(e.target).pos;
         const claimed = e.pack ? e.pack.members.filter(m => m !== e && m.intent === 'search' && m.goalSet).map(m => m.goal) : [];
         const i = nav.scan(c.x, c.z, 2, 14, k => {
             const x = nav.cx(k);
             const z = nav.cz(k);
-            let s = Math.random() * 2 - Math.hypot(x - e.pos.x, z - e.pos.z) * 0.12;
-            if (mem.searchedNear(x, z, 3)) {
+            let s = Rng.ai() * 2 - Math.hypot(x - e.pos.x, z - e.pos.z) * 0.12;
+            if (mem.searchedNear(e.target, x, z, 3)) {
                 s -= 8;
             }
             if (!nav.sight(from.x, from.y + 1.5, from.z, x, nav.h[k] + 1, z)) {
@@ -2786,14 +2852,14 @@ class ShellcapMind extends HiveMind {
     pickRoam(e) {
         const nav = Enemies.nav;
         const mem = this.memOf(e);
-        const prowl = e.alertFloor > 0 && mem.known();
-        const c = prowl ? mem.seen.pos : e.home;
+        const prowl = e.alertFloor > 0 && mem.known(e.target);
+        const c = prowl ? mem.track(e.target).pos : e.home;
         const i = nav.scan(c.x, c.z, 3, prowl ? 18 : 10, k => {
             if (Math.abs(nav.h[k] - e.pos.y) > 1.7) {
                 return -Infinity;
             }
-            let s = Math.random() * 3;
-            if (prowl && mem.searchedNear(nav.cx(k), nav.cz(k), 4)) {
+            let s = Rng.ai() * 3;
+            if (prowl && mem.searchedNear(e.target, nav.cx(k), nav.cz(k), 4)) {
                 s -= 2;
             }
             return s;
@@ -2813,7 +2879,7 @@ class ShellcapMind extends HiveMind {
         }
         let busy = 0;
         for (const m of p.members) {
-            if (m !== e && !m.dead && m.action && (m.action.name === 'swipe' || m.action.name === 'lunge' || m.action.name === 'bash')) {
+            if (m !== e && !m.dead && m.target === e.target && m.action && (m.action.name === 'swipe' || m.action.name === 'lunge' || m.action.name === 'bash')) {
                 busy++;
             }
         }
@@ -2825,10 +2891,10 @@ class ShellcapMind extends HiveMind {
             e.arcT = now + 0.5;
             if (e.underFire > 0 && now > e.weaveT) {
                 e.side = -e.side;
-                e.weaveT = now + 1 + Math.random() * 0.7;
+                e.weaveT = now + 1 + Rng.ai() * 0.7;
             }
             const nav = Enemies.nav;
-            const P = Player.pos;
+            const P = e.target.pos;
             const dx = e.pos.x - P.x;
             const dz = e.pos.z - P.z;
             const d = Math.hypot(dx, dz);
@@ -2846,7 +2912,7 @@ class ShellcapMind extends HiveMind {
     }
 
     circle(e, speed, dt) {
-        const P = Player.pos;
+        const P = e.target.pos;
         const nav = Enemies.nav;
         const dx = e.pos.x - P.x;
         const dz = e.pos.z - P.z;
@@ -2866,7 +2932,7 @@ class ShellcapMind extends HiveMind {
         if (!this.mayAttack(e)) {
             return;
         }
-        const P = Player.pos;
+        const P = e.target.pos;
         const dx = P.x - e.pos.x;
         const dz = P.z - e.pos.z;
         const d = Math.hypot(dx, dz);
@@ -2877,7 +2943,7 @@ class ShellcapMind extends HiveMind {
         if (d < 2.5 && e.cool('swipe')) {
             e.blockT = 0;
             e.swipeSide = 1 - e.swipeSide;
-            if (e.cool('bash') && !e.shields[e.swipeSide].broken && Math.random() < cfg.bashChance) {
+            if (e.cool('bash') && !e.shields[e.swipeSide].broken && Rng.ai() < cfg.bashChance) {
                 e.action = { name: 'bash', t: 0, dur: 1.05, wind: 0.42, side: e.swipeSide, hit: false, lock: true };
                 e.cd.bash = cfg.bashCd;
                 e.cd.swipe = 1.2;
@@ -2891,7 +2957,7 @@ class ShellcapMind extends HiveMind {
         if (d > cfg.lungeMin && d < cfg.lungeMax && e.cool('lunge') && e.seesPlayer) {
             e.cd.lunge = 0.6;
             const near = 1 - (d - cfg.lungeMin) / (cfg.lungeMax - cfg.lungeMin);
-            if (Math.random() < 0.35 + near * 0.4 + (e.pack ? e.pack.aggression * 0.25 : 0.15)) {
+            if (Rng.ai() < 0.35 + near * 0.4 + (e.pack ? e.pack.aggression * 0.25 : 0.15)) {
                 e.cd.lunge = cfg.lungeCd;
                 e.blockT = 0;
                 e.action = { name: 'lunge', t: 0, dur: 1.6, wind: 0.38, hit: false, fly: false, lock: true };
@@ -2902,28 +2968,23 @@ class ShellcapMind extends HiveMind {
 
     strike(e, dmg, knock = 0, stun = 0) {
         const p = e.pack;
-        Vitals.hurt(Math.round(dmg * (1 + (p ? p.aggression : 0) * 0.3)), e.pos);
-        _sv.set(Player.pos.x - e.pos.x, 0, Player.pos.z - e.pos.z).normalize();
-        if (knock) {
-            Player.knock(_sv, knock, stun);
-            Enemies.shake(1, Player.pos);
-        } else {
-            Player.vel.x += _sv.x * 5;
-            Player.vel.z += _sv.z * 5;
-            Enemies.shake(0.4, Player.pos);
-        }
+        const T = e.target;
+        _sv.set(T.pos.x - e.pos.x, 0, T.pos.z - e.pos.z).normalize();
+        Players.hurt(T, dmg * (1 + (p ? p.aggression : 0) * 0.3), {
+            from: e.pos, dir: _sv, knock, stun, push: 5, shake: knock ? 1 : 0.4, by: e.id
+        });
         if (p) {
             p.lust = Math.min(0.8, p.lust + 0.1);
         }
     }
 
     runAction(e, a, dt, now) {
-        const P = Player.pos;
+        const P = e.target.pos;
         switch (a.name) {
             case 'howl':
             case 'screech': {
                 e.stop();
-                e.face(e.mem.seen.pos.x, e.mem.seen.pos.z);
+                e.face(e.mem.track(e.target).pos.x, e.mem.track(e.target).pos.z);
                 for (let i = 0; i < a.beats.length; i++) {
                     if (a.done[i] || a.t < a.beats[i]) {
                         continue;
@@ -3053,13 +3114,20 @@ class ShellcapMind extends HiveMind {
     }
 
     onHurt(e, hit, now) {
+        const A = hit.by || e.hitBy || e.target;
+        if (!A) {
+            return;
+        }
+        if (!e.engaged || !e.target) {
+            e.target = A;
+            e.targetT = now + CONFIG.targeting.hold;
+        }
         e.recentHurt += hit.dmg;
-        if (e.pos.distanceTo(Player.pos) > 9) {
+        if (e.pos.distanceTo(A.pos) > 9) {
             e.underFire = 1.5;
         }
-        e.mem.saw(Player.pos, Player.vel, now);
-        e.mem.shotFrom.pos.copy(Player.pos);
-        e.mem.shotFrom.t = now;
+        e.mem.saw(A, A.pos, A.vel, now);
+        e.mem.shot(A, A.pos, now);
         if (e.pack) {
             e.pack.mem.absorb(e.mem);
             e.pack.anger = Math.min(0.85, e.pack.anger + hit.dmg / 600);
@@ -3091,7 +3159,7 @@ class ShellcapMind extends HiveMind {
                 return;
             }
             if (pl.heat >= 2.5 && e.cool('dodge') && e.onGround) {
-                if (pl.zone === 'high' && Math.random() < 0.4) {
+                if (pl.zone === 'high' && Rng.ai() < 0.4) {
                     e.duckT = 0.7;
                     e.cd.dodge = 1.4;
                     e.thought = 'ducking under the fire';
@@ -3102,7 +3170,7 @@ class ShellcapMind extends HiveMind {
         } else if (hit.flesh) {
             if (facing > 0.3 && e.shieldsLeft() > 0 && (e.cool('block') || (bare && hit.zone === 'high'))) {
                 this.guard(e, hit.zone, bare && hit.zone === 'high' ? 'shot in the bare face - covering up' : 'flesh exposed - shields up');
-            } else if (e.cool('dodge') && e.onGround && Math.random() < 0.5) {
+            } else if (e.cool('dodge') && e.onGround && Rng.ai() < 0.5) {
                 this.dodge(e, 'flesh exposed - dodging');
             }
         }
@@ -3119,13 +3187,13 @@ class ShellcapMind extends HiveMind {
 
     dodge(e, why) {
         const nav = Enemies.nav;
-        const P = Player.pos;
+        const P = e.target.pos;
         const dx = P.x - e.pos.x;
         const dz = P.z - e.pos.z;
         const d = Math.hypot(dx, dz) || 1;
         const px = -dz / d;
         const pz = dx / d;
-        let side = Math.random() < 0.5 ? 1 : -1;
+        let side = Rng.ai() < 0.5 ? 1 : -1;
         for (let k = 0; k < 2; k++, side = -side) {
             const c = nav.cell(e.pos.x + px * side * 2.2, e.pos.z + pz * side * 2.2);
             const mid = nav.cell(e.pos.x + px * side * 1.1, e.pos.z + pz * side * 1.1);
@@ -3147,8 +3215,8 @@ class ShellcapMind extends HiveMind {
 
     pickRetreat(e) {
         const nav = Enemies.nav;
-        const P = Player.pos;
-        const eye = Enemies.player.eye;
+        const P = e.target.pos;
+        const eye = e.target.eye;
         const safe = this.cfg.regenSafe;
         const ax = e.pos.x - P.x;
         const az = e.pos.z - P.z;
@@ -3179,8 +3247,8 @@ class ShellcapMind extends HiveMind {
 
     pickLurk(e) {
         const nav = Enemies.nav;
-        const P = Player.pos;
-        const eye = Enemies.player.eye;
+        const P = e.target.pos;
+        const eye = e.target.eye;
         const i = nav.scan(P.x, P.z, 7, 12, c => {
             const x = nav.cx(c);
             const z = nav.cz(c);
@@ -3202,12 +3270,12 @@ class ShellcapMind extends HiveMind {
         }
         e.spotT = now + 1.5;
         const nav = Enemies.nav;
-        const P = Player.pos;
+        const P = e.target.pos;
         let cx = 0;
         let cz = 0;
         let n = 0;
         for (const m of e.pack.members) {
-            if (m.role === 'rush' && !m.dead) {
+            if (m.role === 'rush' && !m.dead && m.target === e.target) {
                 cx += m.pos.x;
                 cz += m.pos.z;
                 n++;

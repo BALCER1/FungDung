@@ -330,6 +330,142 @@
     min-height: 18px;
   }
 
+  .sheet {
+    color: var(--text);
+    background: var(--bg);
+  }
+
+  .sheet h1 {
+    font-weight: 900;
+    color: var(--red);
+  }
+
+  .sheet p {
+    color: var(--muted);
+  }
+
+  .sheet button {
+    font-weight: 600;
+    color: #fff;
+    background: var(--red);
+    border: none;
+    border-radius: 6px;
+    transition: background .15s ease, transform .15s ease;
+  }
+
+  .sheet button:hover {
+    background: var(--red-dark);
+    transform: translateY(-1px);
+  }
+
+  .sheet button.ghost,
+  .sheet button.ghost:hover {
+    color: var(--muted);
+    background: none;
+    border: 1px solid var(--line);
+  }
+
+  .sheet button:disabled {
+    opacity: .5;
+    cursor: default;
+    transform: none;
+  }
+
+  .sheet p.ok {
+    color: #2e9e5b;
+  }
+
+  .sheet p.err {
+    color: var(--red);
+  }
+
+  .sheet p.msg {
+    min-height: 18px;
+    max-width: 480px;
+    text-align: center;
+  }
+
+  .sheet .actions {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 0;
+  }
+
+  .sheet .panel select {
+    padding: 6px 8px;
+    font: inherit;
+    font-size: 15px;
+  }
+
+  .sheet button.lobbyRow,
+  .sheet button.lobbyRow:hover {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    margin: 0 0 6px;
+    padding: 9px 12px;
+    font-size: 15px;
+    font-weight: 400;
+    text-align: left;
+    color: var(--text);
+    background: none;
+    border: 1px solid var(--line);
+    transform: none;
+  }
+
+  .sheet button.lobbyRow:hover:not(:disabled) {
+    border-color: var(--red);
+  }
+
+  .lobbyRow .lobbyName {
+    flex: 1;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .lobbyRow .lobbyHost {
+    color: var(--muted);
+  }
+
+  .lobbyRow .lobbyCount {
+    min-width: 34px;
+    text-align: right;
+    color: var(--red);
+  }
+
+  #joinList {
+    max-height: 46vh;
+    overflow-y: auto;
+  }
+
+  #lobbyPlayers .tag {
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  #lobbyLink {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+
+  #lobbyQr {
+    width: 150px;
+    margin: 6px auto 0;
+    background: #fff;
+    border-radius: 6px;
+    line-height: 0;
+  }
+
+  #lobbyQr svg {
+    width: 100%;
+    height: auto;
+  }
+
   #profileMenu .actions {
     display: flex;
     justify-content: center;
@@ -431,11 +567,78 @@
   <h1 class="logo">FungDung</h1>
   <div class="sub">a fungi dungeon roguelite</div>
   <button id="singleBtn">Singleplayer</button>
+  <button id="multiBtn">Multiplayer</button>
   <button id="profileBtn">Profile</button>
   <button id="optionsBtn">Settings</button>
   <button id="quitBtn">Quit</button>
   <p id="menuPlayer"><span id="menuLead">Connecting...</span><b id="menuName"></b><span id="menuTag"></span></p>
   <p id="menuNotice"></p>
+</div>
+
+<div id="multiMenu" class="screen sheet" hidden>
+  <h1>Multiplayer</h1>
+  <button id="multiHostBtn">Host</button>
+  <button id="multiJoinBtn">Join</button>
+  <button id="multiBackBtn">Back</button>
+  <p id="multiMsg" class="msg"></p>
+</div>
+
+<div id="hostMenu" class="screen sheet" hidden>
+  <h1>Host a lobby</h1>
+  <form id="hostForm" class="panel">
+    <div class="row"><label for="hostName">Lobby name</label>
+      <input id="hostName" type="text" maxlength="24" autocomplete="off" spellcheck="false" required></div>
+    <div class="row"><label for="hostVisibility">Visibility</label>
+      <select id="hostVisibility">
+        <option value="public">Public</option>
+        <option value="private">Private (password)</option>
+      </select></div>
+    <div id="hostPassRow" class="row" hidden><label for="hostPassword">Password</label>
+      <input id="hostPassword" type="text" maxlength="64" autocomplete="off" spellcheck="false"></div>
+    <p>Up to 4 players. Public lobbies appear in the Join list. Private ones appear with a lock and need the password.</p>
+    <div class="actions">
+      <button class="mini" type="submit">Create</button>
+    </div>
+    <p id="hostMsg" class="msg"></p>
+  </form>
+  <button id="hostBackBtn">Back</button>
+</div>
+
+<div id="joinMenu" class="screen sheet" hidden>
+  <h1>Join a lobby</h1>
+  <div class="panel">
+    <div id="joinList"></div>
+    <p id="joinEmpty">No open lobbies right now. Ask a friend to host, or host one yourself.</p>
+    <form id="joinPassForm" hidden>
+      <div class="row"><label id="joinPassLabel" for="joinPassword">Password</label>
+        <input id="joinPassword" type="text" maxlength="64" autocomplete="off" spellcheck="false" required></div>
+      <div class="actions">
+        <button class="mini" type="submit">Join</button>
+        <button id="joinPassCancel" class="mini ghost" type="button">Cancel</button>
+      </div>
+    </form>
+    <div class="actions">
+      <button id="joinRefreshBtn" class="mini ghost" type="button">Refresh</button>
+    </div>
+    <p id="joinMsg" class="msg"></p>
+  </div>
+  <button id="joinBackBtn">Back</button>
+</div>
+
+<div id="lobbyMenu" class="screen sheet" hidden>
+  <h1 id="lobbyTitle">Lobby</h1>
+  <div class="panel">
+    <div id="lobbyPlayers"></div>
+    <p id="lobbyHostNote"></p>
+    <div class="row">
+      <input id="lobbyLink" type="text" readonly aria-label="Invite link">
+      <button id="lobbyCopyBtn" class="mini" type="button">Copy invite link</button>
+    </div>
+    <div id="lobbyQr"></div>
+    <p id="lobbyMsg" class="msg"></p>
+  </div>
+  <button id="lobbyStartBtn" hidden>Start</button>
+  <button id="lobbyLeaveBtn">Leave</button>
 </div>
 
 <div id="profileMenu" class="screen" hidden>
@@ -609,12 +812,16 @@
       <div class="row">Dev mode
         <input id="setDev" type="checkbox">
       </div>
+      <div class="row">Run seed (dev mode only)
+        <input id="setSeed" type="text" maxlength="20" placeholder="random" autocomplete="off" spellcheck="false">
+      </div>
       <div class="row">Show FPS counter
         <input id="setFps" type="checkbox">
       </div>
       <p>The FPS counter shows frame time and how much of it is spent in game code (JS). If FPS is low and frame time is much higher than JS time, the graphics card is the bottleneck; if JS time is close to frame time, the game code (usually enemy AI) is.</p>
       <p>Shows every enemy's stats, what it's thinking, its vision cone, current path, the pack's memory of you (red = last seen, orange = where it thinks you went) and how long the enemy AI takes each frame.</p>
       <p>While dev mode is on, ` (backtick) hides and shows the overlay.</p>
+      <p>With dev mode on, a run seed makes the next run use that exact map, rooms and enemy spawns. Leave it empty for a random run. The current seed is shown next to the stage name.</p>
     </div>
   </div>
   <button id="optionsBackBtn">Back</button>
@@ -656,9 +863,12 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js"></script>
 <script src="js/db.js"></script>
 <script src="js/profile.js"></script>
 <script src="js/config.js"></script>
+<script src="js/rng.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/batch.js"></script>
 <script src="js/perf.js"></script>
@@ -682,10 +892,13 @@
 <script src="js/weapons/pistols.js"></script>
 <script src="js/weapons/arsenal.js"></script>
 <script src="js/vitals.js"></script>
+<script src="js/players.js"></script>
 <script src="js/enemies/nav.js"></script>
 <script src="js/enemies/enemy-kit.js"></script>
 <script src="js/enemies/shellcap.js"></script>
 <script src="js/map.js"></script>
+<script src="js/net.js"></script>
+<script src="js/lobby.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>

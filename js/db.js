@@ -8,6 +8,8 @@ const DB = {
     notice: '',
     busy: 0,
     onChange: null,
+    watchers: [],
+    token: '',
     reconnectT: 0,
     NAME_RULE: /^[A-Za-z0-9_]+( [A-Za-z0-9_]+)*$/,
     MIN_PASSWORD: 6,
@@ -60,6 +62,40 @@ const DB = {
         if (this.onChange) {
             this.onChange();
         }
+        for (const fn of this.watchers) {
+            fn();
+        }
+    },
+
+    watch(fn) {
+        this.watchers.push(fn);
+    },
+
+    async rpc(name, args) {
+        if (!this.online) {
+            return { error: 'You are offline.' };
+        }
+        try {
+            const { data, error } = await this.client.rpc(name, args || {});
+            return error ? { error: this.explain(error) } : { data };
+        } catch (err) {
+            return { error: this.explain(err) };
+        }
+    },
+
+    beacon(name) {
+        if (!this.token) {
+            return;
+        }
+        try {
+            fetch(this.url + '/rest/v1/rpc/' + name, {
+                method: 'POST',
+                keepalive: true,
+                headers: { apikey: this.key, Authorization: 'Bearer ' + this.token, 'Content-Type': 'application/json' },
+                body: '{}'
+            }).catch(() => {});
+        } catch (e) {
+        }
     },
 
     async run(fn) {
@@ -98,12 +134,14 @@ const DB = {
                     throw res.error;
                 }
                 let user = res.data.session ? res.data.session.user : null;
+                this.token = res.data.session ? res.data.session.access_token : '';
                 if (!user) {
                     const made = await auth.signInAnonymously();
                     if (made.error) {
                         throw made.error;
                     }
                     user = made.data.user;
+                    this.token = made.data.session ? made.data.session.access_token : '';
                 }
                 this.user = user;
                 await this.loadProfile();
@@ -117,6 +155,9 @@ const DB = {
     },
 
     onAuth(session) {
+        if (session) {
+            this.token = session.access_token;
+        }
         if (this.busy || !this.online) {
             return;
         }
@@ -258,7 +299,10 @@ const DB = {
             name_invalid: 'Names are 3-16 characters: letters, numbers, underscores and single spaces.',
             no_profile: 'Your profile was not found. Reload the page and try again.',
             not_signed_in: 'You are not signed in. Reload the page and try again.',
-            PGRST202: 'The server is missing the accounts update. The Stage 2 migration has not been run yet.',
+            PGRST202: 'The server is missing an update. The latest database migration has not been run yet.',
+            lobby_name_invalid: 'Lobby names are 3-24 characters: letters, numbers, spaces and simple punctuation.',
+            lobby_password_invalid: 'Lobby passwords need 4 to 64 characters.',
+            lobby_peer_invalid: 'Could not set up the connection. Try again.',
             invalid_credentials: 'Wrong email or password.',
             email_exists: 'That email already has an account. Use Log in instead.',
             user_already_exists: 'That email already has an account. Use Log in instead.',

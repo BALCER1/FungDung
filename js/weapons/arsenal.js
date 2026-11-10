@@ -186,6 +186,7 @@ const Arsenal = {
     },
 
     shoot(shot) {
+        shot.by = Players.local;
         if (this.onFire && shot.dirs.length) {
             this.onFire(shot);
         }

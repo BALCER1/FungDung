@@ -93,8 +93,7 @@ class NavGrid {
         this.closed = new Uint32Array(n);
         this.run = 0;
         this.heap = new NavHeap();
-        this.flowTop = { target: -1, t: -1e9, dist: new Float32Array(n) };
-        this.flowLow = { target: -1, t: -1e9, dist: new Float32Array(n) };
+        this.flows = new Map();
         this.build(room.colliders);
     }
 
@@ -316,8 +315,16 @@ class NavGrid {
         return out.reverse();
     }
 
-    flowTo(target, now) {
-        const f = this.low ? this.flowLow : this.flowTop;
+    flowTo(who, target, now) {
+        let pair = this.flows.get(who.id);
+        if (!pair) {
+            pair = {
+                top: { target: -1, t: -1e9, dist: new Float32Array(this.n) },
+                low: { target: -1, t: -1e9, dist: new Float32Array(this.n) }
+            };
+            this.flows.set(who.id, pair);
+        }
+        const f = this.low ? pair.low : pair.top;
         if (f.target === target || (f.target >= 0 && now - f.t < 0.25)) {
             return f;
         }
@@ -456,8 +463,8 @@ class NavGrid {
         let best = -1;
         let bs = -Infinity;
         for (let s = 0; s < samples; s++) {
-            const a = Math.random() * Math.PI * 2;
-            const r = rMin + Math.random() * (rMax - rMin);
+            const a = Rng.ai() * Math.PI * 2;
+            const r = rMin + Rng.ai() * (rMax - rMin);
             const px = x + Math.sin(a) * r;
             const pz = z + Math.cos(a) * r;
             if (px < this.x0 || pz < this.z0 || px > -this.x0 || pz > -this.z0) {
@@ -478,7 +485,7 @@ class NavGrid {
 
     randomCell(test, tries = 300) {
         for (let t = 0; t < tries; t++) {
-            const i = Math.floor(Math.random() * this.n);
+            const i = Math.floor(Rng.w() * this.n);
             if (!this.blocked[i] && test(i)) {
                 return i;
             }

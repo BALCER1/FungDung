@@ -10,7 +10,23 @@ const CONFIG = {
     step: 0.5,
     fov: 75,
     sensitivity: 0.002,
-    stages: 12
+    stages: 12,
+    netVersion: 1,
+    maxPlayers: 4,
+    lobby: {
+        heartbeat: 15,
+        refresh: 4,
+        connectTimeout: 15,
+        pingEvery: 4,
+        pingTimeout: 16
+    },
+    targeting: {
+        hold: 3,
+        stick: 12,
+        seen: 40,
+        attacker: 25,
+        attackerFor: 6
+    }
 };
 
 const DETAIL = {

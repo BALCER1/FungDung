@@ -6,19 +6,23 @@ const Game = {
     el: {},
 
     init() {
-        for (const id of ['mainMenu', 'profileMenu', 'optionsMenu', 'pauseMenu', 'mapScreen', 'endScreen', 'deadScreen', 'deadInfo', 'quitScreen', 'hud', 'tip', 'mapBackBtn', 'stageLabel', 'warn']) {
+        for (const id of ['mainMenu', 'multiMenu', 'hostMenu', 'joinMenu', 'lobbyMenu', 'profileMenu', 'optionsMenu', 'pauseMenu', 'mapScreen', 'endScreen', 'deadScreen', 'deadInfo', 'quitScreen', 'hud', 'tip', 'mapBackBtn', 'stageLabel', 'warn']) {
             this.el[id] = document.getElementById(id);
         }
         Input.init();
         Settings.init();
         Profile.init();
+        Net.init();
+        Lobby.init();
         Arsenal.init();
         Vitals.init();
+        Players.init();
         Enemies.init();
         MapView.init();
 
         const on = (id, fn) => document.getElementById(id).addEventListener('click', fn);
         on('singleBtn', () => this.startRun());
+        on('multiBtn', () => Lobby.openMulti());
         on('profileBtn', () => Profile.open());
         on('profileBackBtn', () => this.setState('menu'));
         on('optionsBtn', () => this.openOptions('menu'));
@@ -80,6 +84,10 @@ const Game = {
         this.state = s;
         const screens = {
             menu: 'mainMenu',
+            multi: 'multiMenu',
+            host: 'hostMenu',
+            join: 'joinMenu',
+            lobby: 'lobbyMenu',
             profile: 'profileMenu',
             options: 'optionsMenu',
             paused: 'pauseMenu',
@@ -120,9 +128,14 @@ const Game = {
         }
     },
 
-    startRun() {
+    startRun(seed) {
         this.unloadRoom();
         Vitals.reset();
+        if (seed === undefined && Settings.values.devMode) {
+            seed = Rng.parse(document.getElementById('setSeed').value);
+        }
+        Rng.start(seed === undefined || seed === null ? Rng.fresh() : seed);
+        Rng.use('map');
         RunMap.generate(CONFIG.stages);
         this.openMap();
     },
@@ -156,14 +169,19 @@ const Game = {
         RunMap.visit(node);
         this.def = Rooms.get(node.type);
         const b = new RoomBuilder();
+        const key = node.layer + ':' + node.index;
+        Rng.use('room/' + key);
         this.def.build(b, node);
         this.room = b;
         Player.reset(b);
         Arsenal.reset();
+        Rng.use('spawn/' + key);
+        Rng.think('ai/' + key);
         Enemies.load(b);
         scene.background = new THREE.Color(b.background);
         scene.fog = b.fog;
-        this.el.stageLabel.textContent = `Stage ${node.layer + 1} / ${RunMap.layers.length} - ${this.def.name}`;
+        this.el.stageLabel.textContent = `Stage ${node.layer + 1} / ${RunMap.layers.length} - ${this.def.name}` +
+            (Settings.values.devMode ? ` - seed ${Rng.seed}` : '');
         this.setState('entering');
         this.lock();
     },
@@ -188,6 +206,9 @@ const Game = {
     },
 
     toMenu() {
+        if (Net.active) {
+            Net.leave();
+        }
         this.unloadRoom();
         this.setState('menu');
     },
@@ -227,6 +248,7 @@ const Game = {
         this.last = now;
         if (this.state === 'playing') {
             Player.update(dt);
+            Players.update(dt);
             Enemies.update(dt);
             this.updateRoom(dt);
             Arsenal.update(dt);

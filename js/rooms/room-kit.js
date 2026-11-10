@@ -91,13 +91,13 @@ const RoomKit = {
     },
 
     rand(a, b) {
-        return a + Math.random() * (b - a);
+        return a + Rng.w() * (b - a);
     },
     pick(list) {
-        return list[Math.floor(Math.random() * list.length)];
+        return list[Math.floor(Rng.w() * list.length)];
     },
     weighted(table) {
-        let r = Math.random() * Object.values(table).reduce((a, b) => a + b, 0);
+        let r = Rng.w() * Object.values(table).reduce((a, b) => a + b, 0);
         for (const [k, w] of Object.entries(table)) {
             r -= w;
             if (r < 0) {
@@ -166,13 +166,13 @@ const RoomKit = {
         }
     },
     crates(b, x, z, w, d, color) {
-        const n = 2 + Math.floor(Math.random() * 4);
+        const n = 2 + Math.floor(Rng.w() * 4);
         for (let i = 0; i < n; i++) {
             const s = this.rand(0.9, 1.2);
             const cx = x + this.rand(-w / 2 + s / 2, w / 2 - s / 2);
             const cz = z + this.rand(-d / 2 + s / 2, d / 2 - s / 2);
             b.box(cx, 0, cz, s, s, s, color);
-            if (Math.random() < 0.35) {
+            if (Rng.w() < 0.35) {
                 const t = s * 0.8;
                 b.box(cx + this.rand(-0.1, 0.1), s, cz + this.rand(-0.1, 0.1), t, t, t, color);
             }
@@ -187,7 +187,7 @@ const RoomKit = {
         if (s < 2.5) {
             return false;
         }
-        const flip = Math.random() < 0.5 ? 1 : -1;
+        const flip = Rng.w() < 0.5 ? 1 : -1;
         const start = -(run + s) / 2;
         const slab = start + run + s / 2;
         const sx = alongX ? x + slab * flip : x;
@@ -206,7 +206,7 @@ const RoomKit = {
     },
 
     feature(b, kind, x, z, w, d, H, pal) {
-        const alongX = Math.random() < 0.5;
+        const alongX = Rng.w() < 0.5;
         switch (kind) {
             case 'pillars': {
                 const size = this.rand(1.1, 1.6);
@@ -230,10 +230,10 @@ const RoomKit = {
             case 'cover': {
                 const len = Math.min(alongX ? w : d, this.rand(3, 5.5));
                 this.cover(b, x, z, len, alongX, pal.cover);
-                if (Math.random() < 0.5) {
+                if (Rng.w() < 0.5) {
                     const len2 = Math.min((alongX ? d : w) / 2, this.rand(2, 3.5));
-                    const end = (len / 2 - 0.25) * (Math.random() < 0.5 ? 1 : -1);
-                    const dir = Math.random() < 0.5 ? 1 : -1;
+                    const end = (len / 2 - 0.25) * (Rng.w() < 0.5 ? 1 : -1);
+                    const dir = Rng.w() < 0.5 ? 1 : -1;
                     const ex = alongX ? x + end : x + dir * len2 / 2;
                     const ez = alongX ? z + dir * len2 / 2 : z + end;
                     this.cover(b, ex, ez, len2, !alongX, pal.cover);
@@ -242,12 +242,12 @@ const RoomKit = {
             }
             case 'wall': {
                 const len = Math.min(alongX ? w : d, this.rand(4, 7));
-                const h = Math.random() < 0.5 ? H : this.rand(2.6, H * 0.7);
+                const h = Rng.w() < 0.5 ? H : this.rand(2.6, H * 0.7);
                 b.box(x, 0, z, alongX ? len : 0.7, h, alongX ? 0.7 : len, pal.wall);
                 break;
             }
             case 'mound':
-                this.mound(b, x, z, w * this.rand(0.7, 1), d * this.rand(0.7, 1), 2 + Math.floor(Math.random() * 3), pal.mound);
+                this.mound(b, x, z, w * this.rand(0.7, 1), d * this.rand(0.7, 1), 2 + Math.floor(Rng.w() * 3), pal.mound);
                 break;
             case 'crates':
                 this.crates(b, x, z, w, d, pal.crate);

@@ -1,4 +1,4 @@
-const rand = (a, b) => a + Math.random() * (b - a);
+const rand = (a, b) => a + Rng.w() * (b - a);
 const randInt = (a, b) => Math.floor(rand(a, b + 1));
 
 const RunMap = {
@@ -54,7 +54,7 @@ const RunMap = {
             rest: layer >= 4 ? 5 : 0,
             cellar: layer >= 2 ? 7 : 0
         };
-        let r = Math.random() * Object.values(weights).reduce((a, b) => a + b, 0);
+        let r = Rng.w() * Object.values(weights).reduce((a, b) => a + b, 0);
         for (const [type, w] of Object.entries(weights)) {
             r -= w;
             if (r < 0) {
@@ -74,10 +74,10 @@ const RunMap = {
             const c = Math.round(centre(i));
             let lo = c;
             let hi = c;
-            if (Math.random() < 0.5 && lo > 0) {
+            if (Rng.w() < 0.5 && lo > 0) {
                 lo--;
             }
-            if (Math.random() < 0.4 && hi < B.length - 1 && hi - lo < 2) {
+            if (Rng.w() < 0.4 && hi < B.length - 1 && hi - lo < 2) {
                 hi++;
             }
             for (let j = lo; j <= hi; j++) {
