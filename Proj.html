@@ -244,7 +244,8 @@
   }
 
   #mainMenu button,
-  #optionsMenu > button {
+  #optionsMenu > button,
+  #profileMenu button {
     font-weight: 600;
     color: #fff;
     background: var(--red);
@@ -254,7 +255,8 @@
   }
 
   #mainMenu button:hover,
-  #optionsMenu > button:hover {
+  #optionsMenu > button:hover,
+  #profileMenu button:hover {
     background: var(--red-dark);
     transform: translateY(-1px);
   }
@@ -268,13 +270,84 @@
     background: var(--overlay);
   }
 
-  #optionsMenu h1 {
+  #profileMenu {
+    color: var(--text);
+    background: var(--bg);
+  }
+
+  #optionsMenu h1,
+  #profileMenu h1 {
     font-weight: 900;
     color: var(--red);
   }
 
-  #optionsMenu p {
+  #optionsMenu p,
+  #profileMenu p {
     color: var(--muted);
+  }
+
+  #mainMenu #menuPlayer {
+    margin-top: 14px;
+    color: var(--muted);
+  }
+
+  #mainMenu #menuName {
+    color: var(--text);
+  }
+
+  #mainMenu #menuNotice {
+    color: var(--sub);
+  }
+
+  .screen button.mini {
+    width: auto;
+    padding: 7px 14px;
+    font-size: 14px;
+  }
+
+  #profileMenu button.ghost,
+  #profileMenu button.ghost:hover {
+    color: var(--muted);
+    background: none;
+    border: 1px solid var(--line);
+  }
+
+  #profileMenu button:disabled {
+    opacity: .5;
+    cursor: default;
+    transform: none;
+  }
+
+  #profileMenu p.ok {
+    color: #2e9e5b;
+  }
+
+  #profileMenu p.err {
+    color: var(--red);
+  }
+
+  #profileMenu p.msg {
+    min-height: 18px;
+  }
+
+  #profileMenu .actions {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 0;
+  }
+
+  .panel input[type=text],
+  .panel input[type=email],
+  .panel input[type=password] {
+    width: 200px;
+    padding: 7px 9px;
+    font: inherit;
+    font-size: 15px;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 5px;
   }
 
   .panel {
@@ -358,8 +431,84 @@
   <h1 class="logo">FungDung</h1>
   <div class="sub">a fungi dungeon roguelite</div>
   <button id="singleBtn">Singleplayer</button>
+  <button id="profileBtn">Profile</button>
   <button id="optionsBtn">Settings</button>
   <button id="quitBtn">Quit</button>
+  <p id="menuPlayer"><span id="menuLead">Connecting...</span><b id="menuName"></b><span id="menuTag"></span></p>
+  <p id="menuNotice"></p>
+</div>
+
+<div id="profileMenu" class="screen" hidden>
+  <h1>Profile</h1>
+  <div class="panel">
+    <p id="profStatus"></p>
+
+    <form id="profNameForm" class="row">
+      <label for="profName">Display name</label>
+      <span class="ctl">
+        <input id="profName" type="text" maxlength="16" autocomplete="off" spellcheck="false">
+        <button class="mini" type="submit">Save name</button>
+      </span>
+    </form>
+    <p>3-16 characters: letters, numbers, underscores and spaces.</p>
+    <p id="profNameMsg" class="msg"></p>
+
+    <div id="profGuest" class="actions" hidden>
+      <button id="profSaveBtn" class="mini" type="button">Save account</button>
+      <button id="profLoginBtn" class="mini" type="button">Log in</button>
+    </div>
+
+    <form id="profSaveForm" hidden>
+      <p>Add an email and password to this guest account. Your name and progress stay the same.</p>
+      <div class="row"><label for="profSaveEmail">Email</label>
+        <input id="profSaveEmail" type="email" autocomplete="email" required></div>
+      <div class="row"><label for="profSavePass">Password</label>
+        <input id="profSavePass" type="password" autocomplete="new-password" minlength="6" required></div>
+      <div class="actions">
+        <button class="mini" type="submit">Save account</button>
+        <button class="mini ghost" type="button" data-cancel>Cancel</button>
+      </div>
+    </form>
+
+    <form id="profLoginForm" hidden>
+      <p>Log in to an account you saved earlier. This guest account will be left behind on this device.</p>
+      <div class="row"><label for="profLoginEmail">Email</label>
+        <input id="profLoginEmail" type="email" autocomplete="email" required></div>
+      <div class="row"><label for="profLoginPass">Password</label>
+        <input id="profLoginPass" type="password" autocomplete="current-password" required></div>
+      <div class="actions">
+        <button class="mini" type="submit">Log in</button>
+        <button class="mini ghost" type="button" data-cancel>Cancel</button>
+      </div>
+    </form>
+
+    <div id="profPending" hidden>
+      <p id="profPendingText"></p>
+      <div class="actions">
+        <button id="profCheckBtn" class="mini" type="button">I've confirmed</button>
+      </div>
+    </div>
+
+    <form id="profPassForm" hidden>
+      <p>Set a password so you can log in on other devices.</p>
+      <div class="row"><label for="profNewPass">Password</label>
+        <span class="ctl">
+          <input id="profNewPass" type="password" autocomplete="new-password" minlength="6" required>
+          <button class="mini" type="submit">Set password</button>
+        </span></div>
+    </form>
+
+    <div id="profSaved" class="actions" hidden>
+      <button id="profLogoutBtn" class="mini ghost" type="button">Log out</button>
+    </div>
+
+    <div id="profOffline" class="actions" hidden>
+      <button id="profRetryBtn" class="mini" type="button">Try again</button>
+    </div>
+
+    <p id="profMsg" class="msg"></p>
+  </div>
+  <button id="profileBackBtn">Back</button>
 </div>
 
 <div id="optionsMenu" class="screen" hidden>
@@ -508,6 +657,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
 <script src="js/db.js"></script>
+<script src="js/profile.js"></script>
 <script src="js/config.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/batch.js"></script>

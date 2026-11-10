@@ -6,11 +6,12 @@ const Game = {
     el: {},
 
     init() {
-        for (const id of ['mainMenu', 'optionsMenu', 'pauseMenu', 'mapScreen', 'endScreen', 'deadScreen', 'deadInfo', 'quitScreen', 'hud', 'tip', 'mapBackBtn', 'stageLabel', 'warn']) {
+        for (const id of ['mainMenu', 'profileMenu', 'optionsMenu', 'pauseMenu', 'mapScreen', 'endScreen', 'deadScreen', 'deadInfo', 'quitScreen', 'hud', 'tip', 'mapBackBtn', 'stageLabel', 'warn']) {
             this.el[id] = document.getElementById(id);
         }
         Input.init();
         Settings.init();
+        Profile.init();
         Arsenal.init();
         Vitals.init();
         Enemies.init();
@@ -18,6 +19,8 @@ const Game = {
 
         const on = (id, fn) => document.getElementById(id).addEventListener('click', fn);
         on('singleBtn', () => this.startRun());
+        on('profileBtn', () => Profile.open());
+        on('profileBackBtn', () => this.setState('menu'));
         on('optionsBtn', () => this.openOptions('menu'));
         on('quitBtn', () => this.quit());
         on('resumeBtn', () => this.lock());
@@ -77,6 +80,7 @@ const Game = {
         this.state = s;
         const screens = {
             menu: 'mainMenu',
+            profile: 'profileMenu',
             options: 'optionsMenu',
             paused: 'pauseMenu',
             map: 'mapScreen',

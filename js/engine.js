@@ -46,7 +46,7 @@ const Input = {
     init() {
         addEventListener('keydown', e => {
             this.keys[e.code] = true;
-            if (e.code === 'Space') {
+            if (e.code === 'Space' && !/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) {
                 e.preventDefault();
             }
         });
