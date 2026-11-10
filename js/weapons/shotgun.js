@@ -104,12 +104,12 @@ Weapons.register('shotgun', {
             const g = b.group(chamber);
             g.position.copy(n).multiplyScalar(R * 0.985);
             g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n);
-            b.mesh(new THREE.CircleGeometry(0.0055, 10), m.vent, g, [0, 0.0005, 0], [-Math.PI / 2, 0, 0]);
+            b.mesh(new THREE.CircleGeometry(0.0055, b.n(10, 4)), m.vent, g, [0, 0.0005, 0], [-Math.PI / 2, 0, 0]);
             b.ring(0.0058, 0.0016, m.wart, g, null, [Math.PI / 2, 0, 0], { ts: 12, rs: 5 });
             vents.push(g);
         }
         const rnd = WeaponKit.rng(7);
-        const wartGeo = new THREE.ConeGeometry(0.004, 0.007, 5);
+        const wartGeo = new THREE.ConeGeometry(0.004, 0.007, b.n(5));
         for (let i = 0; i < 26; i++) {
             const th = WeaponKit.lerp(cut + 0.15, Math.PI - 0.3, rnd());
             const ph = rnd() * Math.PI * 2;

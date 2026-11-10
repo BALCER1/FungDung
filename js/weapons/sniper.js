@@ -59,7 +59,7 @@ Weapons.register('sniper', {
         b.displace(skirt.geometry, v => (v.y > 0.02 ? 0.003 * Math.sin(Math.atan2(v.z, v.x) * 11) : 0));
 
         const reactor = b.part(b.group(model, [0, 0.03, -0.03]));
-        b.mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.04, 14), m.stem, reactor, [0, 0.012, 0]);
+        b.mesh(new THREE.CylinderGeometry(0.018, 0.024, 0.04, b.n(14)), m.stem, reactor, [0, 0.012, 0]);
         b.ring(0.022, 0.004, m.gill, reactor, [0, 0.022, 0], [Math.PI / 2, 0, 0]);
         const cap = b.part(b.cap(0.088, 0.052, m.cap, m.gill, reactor, [0, 0.03, 0], null, { flat: 0.7, fins: 24, stemR: 0.02 }));
         const spots = b.spots(cap, 22, m.spot, 0.011, 3).map(s => b.part(s));
@@ -74,13 +74,13 @@ Weapons.register('sniper', {
         b.disc(0.0215, m.lensRear, model, [0, sy, 0.0985]);
         b.ring(0.024, 0.004, m.gill, model, [0, sy, 0.11]);
         for (const z of [-0.1, 0.05]) {
-            b.mesh(new THREE.CylinderGeometry(0.006, 0.009, 0.04, 8), m.stem, model, [0, sy - 0.03, z]);
+            b.mesh(new THREE.CylinderGeometry(0.006, 0.009, 0.04, b.n(8)), m.stem, model, [0, sy - 0.03, z]);
         }
         b.part(b.mini(model, [-0.016, sy + 0.012, 0.035], 0.016, m.cap, m.stem, [0, 0, 0.5]));
         const turrets = [];
         for (const [pos, rot] of [[[0, sy + 0.021, -0.03], [0, 0, 0]], [[0.021, sy, -0.03], [0, 0, -Math.PI / 2]]]) {
             const g = b.group(model, pos, rot);
-            b.mesh(new THREE.CylinderGeometry(0.009, 0.01, 0.012, 14), m.stem, g, [0, 0.004, 0]);
+            b.mesh(new THREE.CylinderGeometry(0.009, 0.01, 0.012, b.n(14)), m.stem, g, [0, 0.004, 0]);
             for (let i = 0; i < 10; i++) {
                 const a = (i / 10) * Math.PI * 2;
                 b.box(0.0015, 0.009, 0.002, m.gill, g, [Math.cos(a) * 0.0098, 0.004, Math.sin(a) * 0.0098], [0, -a, 0]);
@@ -97,7 +97,7 @@ Weapons.register('sniper', {
         b.ring(0.004, 0.0015, m.stem, cover, [0, 0, 0], [0, Math.PI / 2, 0], { ts: 10, rs: 4 });
 
         const bolt = b.part(b.group(model, [0.036, 0.006, 0.08]));
-        b.mesh(new THREE.CylinderGeometry(0.0045, 0.005, 0.045, 8), m.stem, bolt, [0.022, 0, 0], [0, 0, Math.PI / 2]);
+        b.mesh(new THREE.CylinderGeometry(0.0045, 0.005, 0.045, b.n(8)), m.stem, bolt, [0.022, 0, 0], [0, 0, Math.PI / 2]);
         const knob = b.cap(0.014, 0.012, m.cap, m.gill, bolt, [0.044, 0, 0], [0, 0, -Math.PI / 2], { fins: 0, seg: 14 });
         b.spots(knob, 4, m.spot, 0.003, 9);
 

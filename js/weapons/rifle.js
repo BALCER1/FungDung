@@ -60,7 +60,7 @@ Weapons.register('rifle', {
         for (const side of [-1, 1]) {
             [[-0.2, 0.028, 0.03, m.bracket], [-0.255, 0.012, 0.026, m.bracket2], [-0.31, 0.024, 0.022, m.bracket]].forEach(([z, y, r, mat], i) => {
                 const g = b.group(model, [side * 0.026, y, z], [0, side > 0 ? 0 : Math.PI, 0]);
-                b.mesh(new THREE.SphereGeometry(r, 16, 6, Math.PI / 2, Math.PI, 0, Math.PI / 2), mat, g, null, null, [1, 0.32, 1]);
+                b.mesh(new THREE.SphereGeometry(r, b.n(16, 4), b.n(6, 2), Math.PI / 2, Math.PI, 0, Math.PI / 2), mat, g, null, null, [1, 0.32, 1]);
                 b.ring(r * 0.98, 0.0025, m.gill, g, null, [Math.PI / 2, 0, -Math.PI / 2], { arc: Math.PI, ts: 14 });
                 brackets.push(b.part(g));
             });
@@ -96,9 +96,9 @@ Weapons.register('rifle', {
         }
 
         const vial = b.part(b.group(model, [0, -0.07, -0.085], [0.22, 0, 0]));
-        b.mesh(new THREE.CylinderGeometry(0.021, 0.021, 0.1, 18, 1, true), m.glass, vial);
+        b.mesh(new THREE.CylinderGeometry(0.021, 0.021, 0.1, b.n(18), 1, true), m.glass, vial);
         b.sphere(0.021, m.glass, vial, [0, -0.05, 0], null, { t0: Math.PI / 2, tl: Math.PI / 2 });
-        const liqGeo = new THREE.CylinderGeometry(0.0165, 0.0165, 0.1, 16);
+        const liqGeo = new THREE.CylinderGeometry(0.0165, 0.0165, 0.1, b.n(16));
         liqGeo.translate(0, 0.05, 0);
         const liquid = b.part(b.mesh(liqGeo, m.liquid, vial, [0, -0.052, 0]));
         b.sphere(0.0165, m.liquid, vial, [0, -0.052, 0], null, { t0: Math.PI / 2, tl: Math.PI / 2, ws: 14, hs: 6 });
@@ -116,7 +116,7 @@ Weapons.register('rifle', {
         }
 
         const selector = b.part(b.group(model, [-0.033, -0.004, 0.045]));
-        b.mesh(new THREE.CylinderGeometry(0.0025, 0.0025, 0.016, 6), m.stem, selector, [0, 0.008, 0]);
+        b.mesh(new THREE.CylinderGeometry(0.0025, 0.0025, 0.016, b.n(6)), m.stem, selector, [0, 0.008, 0]);
         b.cap(0.007, 0.006, m.cap, null, selector, [0, 0.016, 0], [0, 0, 0], { seg: 10 });
         b.sphere(0.004, m.stem, selector, [0, 0, 0], null, { ws: 8, hs: 6 });
         const pips = [];
@@ -126,7 +126,7 @@ Weapons.register('rifle', {
             pips.push(mat);
         }
 
-        b.mesh(new THREE.CylinderGeometry(0.003, 0.004, 0.05, 6), m.stem, model, [0, 0.085, 0.07]);
+        b.mesh(new THREE.CylinderGeometry(0.003, 0.004, 0.05, b.n(6)), m.stem, model, [0, 0.085, 0.07]);
         b.ring(0.0075, 0.0022, m.cap, model, [0, 0.112, 0.07], null, { ts: 14, rs: 5 });
         for (let i = 0; i < 3; i++) {
             b.box(0.008, 0.004, 0.0035, m.dark, model, [0, 0.027, -0.68 - i * 0.009]);
@@ -138,7 +138,7 @@ Weapons.register('rifle', {
         b.tube([[0, 0.004, -0.3], [0.004, -0.06, -0.16], [0.006, -0.1, 0.0], [0.004, -0.085, 0.16], [0, -0.02, 0.27]], 0.0035, 0.0035, m.strap, sling, { seg: 40, radial: 5 });
 
         const bolt = b.part(b.group(model, [0.03, 0.012, 0.02]));
-        b.mesh(new THREE.CylinderGeometry(0.005, 0.006, 0.03, 8), m.stem, bolt, [0.015, 0, 0], [0, 0, Math.PI / 2]);
+        b.mesh(new THREE.CylinderGeometry(0.005, 0.006, 0.03, b.n(8)), m.stem, bolt, [0.015, 0, 0], [0, 0, Math.PI / 2]);
         b.cap(0.014, 0.012, m.cap, m.gill, bolt, [0.028, 0, 0], [0, 0, -Math.PI / 2], { fins: 0, seg: 14 });
 
         b.tube([[0, -0.02, 0.07], [0, -0.07, 0.09], [0, -0.13, 0.115]], 0.019, 0.017, m.wood, model, { wobble: 0.002, ends: true });

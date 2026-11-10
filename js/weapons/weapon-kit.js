@@ -96,6 +96,11 @@ class WeaponBuilder {
         this.mats = {};
         this.parts = [];
         this.grips = {};
+        this.lod = DETAIL.guns;
+    }
+
+    n(count, min = 3) {
+        return DETAIL.seg(this.lod, count, min);
     }
 
     mat(key, opts) {
@@ -195,8 +200,8 @@ class WeaponBuilder {
     tubeZ(rFront, rBack, len, mat, parent, pos, opts = {}) {
         const geo = new THREE.CylinderGeometry(
             rFront, rBack, len,
-            opts.seg || 16,
-            opts.hseg || Math.max(1, Math.round(len / 0.04)),
+            this.n(opts.seg || 16),
+            this.n(opts.hseg || Math.max(1, Math.round(len / 0.04)), 1),
             !!opts.open,
             Math.PI
         );
@@ -207,21 +212,21 @@ class WeaponBuilder {
         return this.mesh(geo, mat, parent, pos, opts.rot, opts.scale);
     }
     sphere(r, mat, parent, pos, scale, opts = {}) {
-        const geo = new THREE.SphereGeometry(r, opts.ws || 18, opts.hs || 12, 0, Math.PI * 2, opts.t0 || 0, opts.tl || Math.PI);
+        const geo = new THREE.SphereGeometry(r, this.n(opts.ws || 18, 4), this.n(opts.hs || 12, 2), 0, Math.PI * 2, opts.t0 || 0, opts.tl || Math.PI);
         if (opts.wobble) {
             this.wobble(geo, opts.wobble, opts.freq || 40, opts.seed || 0);
         }
         return this.mesh(geo, mat, parent, pos, opts.rot, scale);
     }
     ring(r, tube, mat, parent, pos, rot, opts = {}) {
-        const geo = new THREE.TorusGeometry(r, tube, opts.rs || 8, opts.ts || 28, opts.arc || Math.PI * 2);
+        const geo = new THREE.TorusGeometry(r, tube, this.n(opts.rs || 8), this.n(opts.ts || 28, 4), opts.arc || Math.PI * 2);
         return this.mesh(geo, mat, parent, pos, rot, opts.scale);
     }
     disc(r, mat, parent, pos, rot) {
-        return this.mesh(new THREE.CircleGeometry(r, 20), mat, parent, pos, rot);
+        return this.mesh(new THREE.CircleGeometry(r, this.n(20, 5)), mat, parent, pos, rot);
     }
     lathe(points, mat, parent, pos, rot, opts = {}) {
-        const geo = new THREE.LatheGeometry(points.map(p => new THREE.Vector2(p[0], p[1])), opts.seg || 24);
+        const geo = new THREE.LatheGeometry(points.map(p => new THREE.Vector2(p[0], p[1])), this.n(opts.seg || 24, 4));
         return this.mesh(geo, mat, parent, pos, rot, opts.scale);
     }
     box(w, h, d, mat, parent, pos, rot) {
@@ -230,8 +235,8 @@ class WeaponBuilder {
 
     tube(points, r0, r1, mat, parent, opts = {}) {
         const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(p[0], p[1], p[2])));
-        const tub = opts.seg || 24;
-        const rad = opts.radial || 8;
+        const tub = this.n(opts.seg || 24, 2);
+        const rad = this.n(opts.radial || 8);
         const geo = new THREE.TubeGeometry(curve, tub, 1, rad, false);
         const pos = geo.attributes.position;
         const c = new THREE.Vector3();
@@ -261,6 +266,10 @@ class WeaponBuilder {
     }
 
     rbox(w, h, d, r, mat, parent, pos, rot) {
+        if (this.lod === 'potato') {
+            return this.box(w, h, d, mat, parent, pos, rot);
+        }
+        const fine = this.lod === 'high';
         const bev = Math.min(r * 0.5, w * 0.2, h * 0.2, d * 0.2);
         const W = w - 2 * bev;
         const H = h - 2 * bev;
@@ -277,7 +286,7 @@ class WeaponBuilder {
         s.quadraticCurveTo(-W / 2, -H / 2, -W / 2 + R, -H / 2);
         const geo = new THREE.ExtrudeGeometry(s, {
             depth: Math.max(0.0001, d - 2 * bev), bevelEnabled: true,
-            bevelThickness: bev, bevelSize: bev, bevelSegments: 2, curveSegments: 4
+            bevelThickness: bev, bevelSize: bev, bevelSegments: fine ? 2 : 1, curveSegments: fine ? 4 : 2
         });
         geo.center();
         return this.mesh(geo, mat, parent, pos, rot);
@@ -288,8 +297,9 @@ class WeaponBuilder {
         const seg = opts.seg || 26;
         const flat = opts.flat === undefined ? 0.8 : opts.flat;
         const pts = [[r * 0.92, -h * 0.14]];
-        for (let i = 0; i <= 12; i++) {
-            const a = (i / 12) * Math.PI / 2;
+        const rows = this.n(12);
+        for (let i = 0; i <= rows; i++) {
+            const a = (i / rows) * Math.PI / 2;
             pts.push([r * Math.pow(Math.cos(a), flat), h * Math.sin(a)]);
         }
         const dome = this.lathe(pts, mat, g, null, null, { seg });
@@ -299,7 +309,8 @@ class WeaponBuilder {
         if (gillMat) {
             const stemR = opts.stemR === undefined ? r * 0.18 : opts.stemR;
             this.lathe([[stemR, h * 0.3], [r * 0.6, h * 0.08], [r * 0.92, -h * 0.14]], gillMat, g, null, null, { seg });
-            const n = opts.fins === undefined ? (r > 0.03 ? 20 : 0) : opts.fins;
+            const fins = opts.fins === undefined ? (r > 0.03 ? 20 : 0) : opts.fins;
+            const n = this.lod === 'potato' ? 0 : this.lod === 'medium' ? Math.round(fins / 2) : fins;
             if (n) {
                 const len = r * 0.92 - stemR;
                 const finGeo = new THREE.BoxGeometry(len, h * 0.16, Math.max(0.0012, r * 0.018));
@@ -318,7 +329,7 @@ class WeaponBuilder {
     spots(capGroup, count, mat, size, seed = 1, minA = 0.2, maxA = 1.42) {
         const { r, h, flat } = capGroup.userData.capInfo;
         const rnd = WeaponKit.rng(seed);
-        const geo = new THREE.SphereGeometry(1, 8, 6);
+        const geo = new THREE.SphereGeometry(1, this.n(8, 4), this.n(6, 2));
         const up = new THREE.Vector3(0, 1, 0);
         const out = [];
         for (let i = 0; i < count; i++) {
@@ -338,7 +349,7 @@ class WeaponBuilder {
 
     mini(parent, pos, size, capMat, stemMat, rot) {
         const g = this.group(parent, pos, rot);
-        this.mesh(new THREE.CylinderGeometry(size * 0.2, size * 0.3, size * 0.9, 8), stemMat, g, [0, size * 0.45, 0]);
+        this.mesh(new THREE.CylinderGeometry(size * 0.2, size * 0.3, size * 0.9, this.n(8)), stemMat, g, [0, size * 0.45, 0]);
         this.cap(size * 0.62, size * 0.42, capMat, null, g, [0, size * 0.85, 0], null, { seg: 14 });
         return g;
     }
@@ -365,8 +376,8 @@ class SporeFX {
         this.live = [];
         this.pools = { dot: [], ring: [] };
         this.geos = {
-            dot: new THREE.IcosahedronGeometry(1, 1),
-            ring: new THREE.TorusGeometry(1, 0.07, 6, 32)
+            dot: new THREE.IcosahedronGeometry(1, DETAIL.guns === 'high' ? 1 : 0),
+            ring: new THREE.TorusGeometry(1, 0.07, DETAIL.seg(DETAIL.guns, 6), DETAIL.seg(DETAIL.guns, 32, 6))
         };
         this.max = 500;
         this.layer = 0;
@@ -514,7 +525,7 @@ class SporeProjectiles {
         this.texCache = {};
         this.max = 64;
         this.geo = SporeProjectiles.quad();
-        this.body = new THREE.CylinderGeometry(1, 1, 1, 10, 1).rotateX(Math.PI / 2);
+        this.body = new THREE.CylinderGeometry(1, 1, 1, DETAIL.seg(DETAIL.guns, 10, 4), 1).rotateX(Math.PI / 2);
         this._a = new THREE.Vector3();
         this._p = new THREE.Vector3();
         this._z = new THREE.Vector3(0, 0, 1);

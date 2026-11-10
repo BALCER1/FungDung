@@ -104,7 +104,7 @@
                 gun.coreMesh = b.part(b.sphere(0.0135, gun.core, gun.sac, null, [1, 0.9, 1.15], { wobble: 0.0015, freq: 120 }));
 
                 gun.hammer = b.part(b.group(g, [0, 0.042, 0.038]));
-                b.mesh(new THREE.CylinderGeometry(0.003, 0.004, 0.016, 6), m.stem, gun.hammer, [0, 0.006, 0.004], [-0.5, 0, 0]);
+                b.mesh(new THREE.CylinderGeometry(0.003, 0.004, 0.016, b.n(6)), m.stem, gun.hammer, [0, 0.006, 0.004], [-0.5, 0, 0]);
                 b.cap(0.01, 0.008, m.deep, m.gill, gun.hammer, [0, 0.013, 0.01], [-1.1, 0, 0], { fins: 0, seg: 12 });
 
                 gun.vines = [];
@@ -261,7 +261,7 @@
                 });
                 lights.forEach(l => l.parent.remove(l));
                 const disc = new THREE.Mesh(
-                    new THREE.RingGeometry(0.03, 0.16, 40),
+                    new THREE.RingGeometry(0.03, 0.16, DETAIL.seg(DETAIL.guns, 40, 8)),
                     new THREE.MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false })
                 );
                 disc.rotation.y = Math.PI / 2;

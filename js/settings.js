@@ -7,7 +7,9 @@ const Settings = {
         sensitivity: 4,
         fullscreen: false,
         darkMode: false,
-        devMode: false
+        devMode: false,
+        enemyDetail: 'high',
+        gunDetail: 'high'
     },
 
     init() {
@@ -28,7 +30,9 @@ const Settings = {
             sensOut: $('sensOut'),
             res: $('setRes'),
             dark: $('setDark'),
-            dev: $('setDev')
+            dev: $('setDev'),
+            enemyDetail: $('setEnemyDetail'),
+            gunDetail: $('setGunDetail')
         };
 
         document.querySelectorAll('#optionsMenu .tabs button').forEach(btn => {
@@ -48,6 +52,13 @@ const Settings = {
         this.el.dark.onchange = () => this.set('darkMode', this.el.dark.checked);
         this.el.dev.checked = this.values.devMode;
         this.el.dev.onchange = () => this.set('devMode', this.el.dev.checked);
+        for (const k of ['enemyDetail', 'gunDetail']) {
+            if (!DETAIL.names.includes(this.values[k])) {
+                this.values[k] = 'high';
+            }
+            this.el[k].value = this.values[k];
+            this.el[k].onchange = () => this.set(k, this.el[k].value);
+        }
 
         this.el.fullscreen.value = this.values.fullscreen ? 'fullscreen' : 'windowed';
         this.el.fullscreen.onchange = () => this.setFullscreen(this.el.fullscreen.value === 'fullscreen');
@@ -110,6 +121,18 @@ const Settings = {
         CONFIG.sensitivity = v.sensitivity * 0.0005;
         if (typeof Enemies !== 'undefined' && Enemies.ready) {
             Enemies.setDev(v.devMode);
+        }
+        if (DETAIL.enemies !== v.enemyDetail) {
+            DETAIL.enemies = v.enemyDetail;
+            if (typeof ShellcapKit !== 'undefined') {
+                ShellcapKit.setDetail(v.enemyDetail);
+            }
+        }
+        if (DETAIL.guns !== v.gunDetail) {
+            DETAIL.guns = v.gunDetail;
+            if (typeof Arsenal !== 'undefined') {
+                Arsenal.rebuild();
+            }
         }
 
         this.el.scaleOut.textContent = Math.round(v.renderScale * 100) + '%';

@@ -27,8 +27,8 @@ const _qa = new THREE.Quaternion();
 const _qb = new THREE.Quaternion();
 const _qf = new THREE.Quaternion();
 
-function shellGeo(rx, ry, rz, phi0, phiLen, th0, thLen, seg = 10, bump = 0.06) {
-    const g = new THREE.SphereGeometry(1, seg, Math.max(5, Math.round(seg * 0.75)), phi0, phiLen, th0, thLen);
+function shellGeoBase(rx, ry, rz, phi0, phiLen, th0, thLen, seg = 10, bump = 0.06) {
+    const g = new THREE.SphereGeometry(1, seg, Math.max(3, Math.round(seg * 0.75)), phi0, phiLen, th0, thLen);
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
         const x = p.getX(i);
@@ -75,9 +75,9 @@ function chip(g, amt, seed = 1) {
     return g;
 }
 
-function fistGeo(side) {
+function fistGeo(side, n = v => v) {
     const sg = side ? -1 : 1;
-    const g = new THREE.BoxGeometry(0.44, 0.68, 0.16, 4, 6, 2);
+    const g = new THREE.BoxGeometry(0.44, 0.68, 0.16, n(4, 1), n(6, 2), n(2, 1));
     const p = g.attributes.position;
     for (let i = 0; i < p.count; i++) {
         let x = p.getX(i);
@@ -92,7 +92,7 @@ function fistGeo(side) {
     chip(g, 0.012, side + 3);
     const parts = [g];
     for (let i = -1; i <= 1; i++) {
-        parts.push(new THREE.ConeGeometry(0.045, 0.16, 4).rotateX(Math.PI + 0.35).translate(i * 0.14, -0.4, 0.07));
+        parts.push(new THREE.ConeGeometry(0.045, 0.16, n(4)).rotateX(Math.PI + 0.35).translate(i * 0.14, -0.4, 0.07));
     }
     const centre = sg * Math.PI / 4;
     return mergeGeos(parts).rotateY(centre).translate(Math.sin(centre) * 0.12, -0.32, Math.cos(centre) * 0.12);
@@ -166,9 +166,36 @@ const ShellcapKit = {
             flesh: moods.map(c => new THREE.MeshLambertMaterial({ color: 0x17120f, emissive: c, emissiveIntensity: 0.5 })),
             glow: moods.map(c => new THREE.MeshBasicMaterial({ color: c }))
         };
+        this.geos = {};
+        this.level = DETAIL.enemies;
+        this.geo = this.geos[this.level] = this.makeGeo(this.level);
+    },
 
+    get(key) {
+        const [k, i] = key.split('.');
+        return i === undefined ? this.geo[k] : this.geo[k][+i];
+    },
+
+    setDetail(level) {
+        if (!this.ready || this.level === level) {
+            return;
+        }
+        this.level = level;
+        this.geo = this.geos[level] || (this.geos[level] = this.makeGeo(level));
+        scene.traverse(o => {
+            const key = o.isMesh && o.geometry.userData.scKey;
+            if (key) {
+                o.geometry = this.get(key);
+            }
+        });
+    },
+
+    makeGeo(level) {
+        const n = (v, min = 3) => DETAIL.seg(level, v, min);
+        const shellGeo = (rx, ry, rz, phi0, phiLen, th0, thLen, seg, bump) =>
+            shellGeoBase(rx, ry, rz, phi0, phiLen, th0, thLen, n(seg, 4), bump);
         const TR = [0.34, 0.38, 0.29];
-        const lathe = pts => new THREE.LatheGeometry(pts.slice().reverse().map(([r, y]) => new THREE.Vector2(r, y)), 10);
+        const lathe = pts => new THREE.LatheGeometry(pts.slice().reverse().map(([r, y]) => new THREE.Vector2(r, y)), n(10, 4));
         const S = 1.08;
         const H = Math.PI / 2;
         const torsoShell = (p0, pl, t0, tl, bump = 0.07) => shellGeo(TR[0] * S, TR[1] * S, TR[2] * S, p0, pl, t0, tl, 10, bump);
@@ -179,7 +206,7 @@ const ShellcapKit = {
             const th = 0.3 + i * 0.2;
             const y = Math.cos(th) * TR[1] * S;
             const z = -Math.sin(th) * TR[2] * S;
-            spikes.push(new THREE.ConeGeometry(0.045, 0.17, 4).rotateX(-0.5 - i * 0.14).translate(0, y + 0.03, z - 0.05));
+            spikes.push(new THREE.ConeGeometry(0.045, 0.17, n(4)).rotateX(-0.5 - i * 0.14).translate(0, y + 0.03, z - 0.05));
             if (i < 4) {
                 const sx = (i % 2 ? 1 : -1) * 0.14;
                 crystals.push(new THREE.OctahedronGeometry(0.055).scale(0.7, 2.6, 0.7)
@@ -188,7 +215,7 @@ const ShellcapKit = {
         }
         const horns = [];
         for (const sg of [1, -1]) {
-            horns.push(new THREE.ConeGeometry(0.045, 0.36, 5).translate(0, 0.18, 0).rotateX(-1.25).rotateZ(-0.55 * sg).translate(0.13 * sg, 0.12, -0.03));
+            horns.push(new THREE.ConeGeometry(0.045, 0.36, n(5)).translate(0, 0.18, 0).rotateX(-1.25).rotateZ(-0.55 * sg).translate(0.13 * sg, 0.12, -0.03));
         }
         const eyes = [];
         for (const sg of [1, -1]) {
@@ -197,15 +224,15 @@ const ShellcapKit = {
         }
         const toes = [];
         for (let i = -1; i <= 1; i++) {
-            toes.push(new THREE.ConeGeometry(0.03, 0.14, 4).rotateX(Math.PI / 2).translate(i * 0.065, -0.05, 0.31));
+            toes.push(new THREE.ConeGeometry(0.03, 0.14, n(4)).rotateX(Math.PI / 2).translate(i * 0.065, -0.05, 0.31));
         }
         const pauldron = [shellGeo(0.25, 0.21, 0.25, 0, Math.PI * 2, 0, 1.35, 8, 0.1)];
-        pauldron.push(new THREE.ConeGeometry(0.05, 0.24, 4).translate(0, 0.12, 0).rotateZ(-0.35).translate(0.05, 0.17, 0));
-        pauldron.push(new THREE.ConeGeometry(0.04, 0.17, 4).translate(0, 0.085, 0).rotateZ(-0.7).rotateX(-0.4).translate(0.12, 0.12, -0.08));
+        pauldron.push(new THREE.ConeGeometry(0.05, 0.24, n(4)).translate(0, 0.12, 0).rotateZ(-0.35).translate(0.05, 0.17, 0));
+        pauldron.push(new THREE.ConeGeometry(0.04, 0.17, n(4)).translate(0, 0.085, 0).rotateZ(-0.7).rotateX(-0.4).translate(0.12, 0.12, -0.08));
 
-        this.geo = {
-            torso: new THREE.SphereGeometry(1, 16, 12).scale(TR[0], TR[1], TR[2]),
-            pelvis: new THREE.SphereGeometry(0.2, 12, 8).scale(1.35, 0.85, 1.1),
+        const geo = {
+            torso: new THREE.SphereGeometry(1, n(16, 4), n(12)).scale(TR[0], TR[1], TR[2]),
+            pelvis: new THREE.SphereGeometry(0.2, n(12, 4), n(8)).scale(1.35, 0.85, 1.1),
             chestL: torsoShell(H - 0.03, 1.3, 0.25, 0.83),
             chestR: torsoShell(H - 1.27, 1.3, 0.25, 0.83),
             belly: torsoShell(H - 1.05, 2.1, 1.03, 0.8),
@@ -215,31 +242,41 @@ const ShellcapKit = {
             spikes: mergeGeos(spikes),
             crystals: mergeGeos(crystals),
             tasset: shellGeo(0.3, 0.22, 0.27, H - 1.1, 2.2, 1.15, 1.1, 8, 0.08),
-            head: new THREE.SphereGeometry(0.15, 10, 8).scale(1, 0.9, 1.2),
-            maw: new THREE.SphereGeometry(0.065, 8, 6),
+            head: new THREE.SphereGeometry(0.15, n(10, 4), n(8)).scale(1, 0.9, 1.2),
+            maw: new THREE.SphereGeometry(0.065, n(8, 4), n(6)),
             helm: mergeGeos([
                 shellGeo(0.21, 0.16, 0.26, 0, Math.PI * 2, 0, 1.5, 9, 0.07),
-                chip(new THREE.BoxGeometry(0.34, 0.06, 0.1, 3, 1, 1).rotateX(0.35).translate(0, 0.025, 0.2), 0.01),
+                chip(new THREE.BoxGeometry(0.34, 0.06, 0.1, n(3, 1), 1, 1).rotateX(0.35).translate(0, 0.025, 0.2), 0.01),
                 ...horns
             ]),
             eyes: mergeGeos(eyes),
-            tusk: new THREE.ConeGeometry(0.03, 0.21, 5).translate(0, 0.105, 0).rotateX(2.0).translate(0, -0.02, 0.02),
+            tusk: new THREE.ConeGeometry(0.03, 0.21, n(5)).translate(0, 0.105, 0).rotateX(2.0).translate(0, -0.02, 0.02),
             upper: lathe([[0, 0.05], [0.1, 0.03], [0.125, -0.12], [0.115, -0.3], [0.09, -0.46], [0, -0.52]]),
             fore: lathe([[0, 0.04], [0.095, 0.02], [0.105, -0.14], [0.09, -0.34], [0.075, -0.5], [0, -0.54]]),
             pauldron: mergeGeos(pauldron),
             rerebrace: [0, 1].map(s => shellGeo(0.14, 0.26, 0.14, (s ? 0 : Math.PI) - 1.3, 2.6, 0.35, 2.4, 8, 0.07)),
-            fist: [fistGeo(0), fistGeo(1)],
+            fist: [fistGeo(0, n), fistGeo(1, n)],
             thigh: lathe([[0, 0.05], [0.14, 0.03], [0.165, -0.08], [0.16, -0.2], [0.135, -0.34], [0.1, -0.46], [0, -0.52]]),
             thighPlate: shellGeo(0.19, 0.29, 0.19, H - 1.4, 2.8, 0.3, 2.45, 9, 0.08).translate(0, -0.22, 0),
             knee: shellGeo(0.12, 0.11, 0.1, 0, Math.PI * 2, 0, 1.4, 8, 0.07).rotateX(Math.PI / 2).translate(0, 0, 0.07),
             shin: lathe([[0, 0.04], [0.1, 0.02], [0.12, -0.1], [0.105, -0.24], [0.07, -0.42], [0.06, -0.48], [0, -0.52]]),
             greave: shellGeo(0.125, 0.21, 0.125, H - 1.1, 2.2, 0.4, 2.3, 8, 0.07).translate(0, -0.25, 0.01),
-            foot: chip(new THREE.BoxGeometry(0.21, 0.085, 0.35, 2, 1, 2).translate(0, -0.042, 0.08), 0.012),
+            foot: chip(new THREE.BoxGeometry(0.21, 0.085, 0.35, n(2, 1), 1, n(2, 1)).translate(0, -0.042, 0.08), 0.012),
             toes: mergeGeos(toes),
             shardA: new THREE.TetrahedronGeometry(0.1),
-            shardB: chip(new THREE.BoxGeometry(0.2, 0.05, 0.14, 2, 1, 2), 0.015),
-            shardC: new THREE.DodecahedronGeometry(0.085)
+            shardB: chip(new THREE.BoxGeometry(0.2, 0.05, 0.14, n(2, 1), 1, n(2, 1)), 0.015),
+            shardC: level === 'potato' ? new THREE.IcosahedronGeometry(0.085) : new THREE.DodecahedronGeometry(0.085)
         };
+        for (const k in geo) {
+            if (Array.isArray(geo[k])) {
+                geo[k].forEach((g, i) => {
+                    g.userData.scKey = k + '.' + i;
+                });
+            } else {
+                geo[k].userData.scKey = k;
+            }
+        }
+        return geo;
     },
     stain() {
         if (!this.stainKit) {
@@ -375,7 +412,7 @@ class Shellcap extends Enemy {
                 under: o.under || LIMB_MULT, mesh: null, regrowing: false
             };
             pl.make = () => {
-                const m = add(geo, M.shell, parent);
+                const m = add(ShellcapKit.get(geo.userData.scKey), M.shell, parent);
                 if (o.pos) {
                     m.position.fromArray(o.pos);
                 }
@@ -385,7 +422,7 @@ class Shellcap extends Enemy {
                 m.userData.part = { plate: pl };
                 for (const [g, kind] of o.extras || []) {
                     const mat = kind === 'glow' ? M.glow[this.mood] : M.shell;
-                    const c = new THREE.Mesh(g, mat);
+                    const c = new THREE.Mesh(ShellcapKit.get(g.userData.scKey), mat);
                     c.userData.base = mat;
                     m.add(c);
                     if (kind === 'glow') {

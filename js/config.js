@@ -12,3 +12,14 @@ const CONFIG = {
     sensitivity: 0.002,
     stages: 12
 };
+
+const DETAIL = {
+    names: ['high', 'medium', 'potato'],
+    scale: { high: 1, medium: 0.5, potato: 0.25 },
+    guns: 'high',
+    enemies: 'high',
+
+    seg(level, n, min = 3) {
+        return Math.max(min, Math.round(n * (DETAIL.scale[level] || 1)));
+    }
+};

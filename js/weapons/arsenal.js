@@ -22,15 +22,7 @@ const Arsenal = {
             const k = this.scope.sensitivity(this.current);
             look(dx * k, dy * k);
         };
-        for (const id of Weapons.order) {
-            const w = new Weapon(id, {
-                worldParent: scene,
-                trace: (origin, dir, range) => this.trace(origin, dir, range),
-                onShot: shot => this.shoot(shot)
-            });
-            this.view.attach(w);
-            this.weapons[id] = w;
-        }
+        this.buildWeapons();
         this.makeHud();
         this.select(Weapons.order[0]);
 
@@ -90,6 +82,37 @@ const Arsenal = {
                 this.scope.update(this.current, camera, CONFIG.fov);
             }
         });
+    },
+
+    buildWeapons() {
+        for (const id of Weapons.order) {
+            const w = new Weapon(id, {
+                worldParent: scene,
+                trace: (origin, dir, range) => this.trace(origin, dir, range),
+                onShot: shot => this.shoot(shot)
+            });
+            this.view.attach(w);
+            this.weapons[id] = w;
+        }
+    },
+
+    rebuild() {
+        if (!this.current) {
+            return;
+        }
+        const ammo = {};
+        for (const id in this.weapons) {
+            ammo[id] = this.weapons[id].ammo;
+            this.weapons[id].dispose();
+        }
+        const id = this.current.id;
+        this.current = null;
+        this.buildWeapons();
+        for (const k in ammo) {
+            this.weapons[k].ammo = ammo[k];
+            this.weapons[k].reloadFrom = ammo[k];
+        }
+        this.select(id);
     },
 
     select(id) {
