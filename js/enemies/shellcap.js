@@ -788,6 +788,18 @@ class Shellcap extends Enemy {
         Enemies.kill(this);
         const heavy = this.lastHeavy;
         const side = dir.x * Math.cos(this.yaw) - dir.z * Math.sin(this.yaw);
+        if (DETAIL.deathFx === 'simple') {
+            this.dying = {
+                simple: true, t: 0, y: this.visY, col: this.moodColor().clone(),
+                side: Math.abs(side) > 0.2 ? Math.sign(side) : (Math.random() < 0.5 ? 1 : -1)
+            };
+            this.root.rotation.order = 'YXZ';
+            this.action = { name: 'dying', t: 0, lock: true };
+            _sv.set(this.pos.x, this.pos.y + 1.2, this.pos.z);
+            Enemies.fx.burst(_sv, 16, this.dying.col, 3, 0.6, { up: 1, grav: 2 });
+            Enemies.shake(heavy ? 0.4 : 0.2, this.pos);
+            return;
+        }
         const d = this.dying = {
             t: 0, dir: dir.clone(), heavy, twitchT: 0, shiverT: 0, thumped: false, split: false,
             side: Math.abs(side) > 0.2 ? Math.sign(side) : (Math.random() < 0.5 ? 1 : -1),
@@ -835,8 +847,28 @@ class Shellcap extends Enemy {
         Enemies.shake(heavy ? 0.5 : 0.25, this.pos);
     }
 
+    updateSimpleDeath(dt) {
+        const d = this.dying;
+        const t = (d.t += dt);
+        const fall = scEase(t / 0.45);
+        const sink = scEase((t - 0.7) / 0.8);
+        const root = this.root;
+        root.position.set(this.pos.x, d.y - 1.3 * sink, this.pos.z);
+        root.rotation.set(0, this.yaw, -d.side * 1.45 * fall);
+        root.scale.setScalar(1 - 0.4 * sink);
+        this.eyeMat.color.copy(d.col).multiplyScalar(1 - fall);
+        if (t < 1.5) {
+            return false;
+        }
+        this.eyeMat.dispose();
+        return true;
+    }
+
     updateDying(dt, now) {
         const d = this.dying;
+        if (d.simple) {
+            return this.updateSimpleDeath(dt);
+        }
         const t = (d.t += dt);
         if (d.split) {
             return this.updateRemains(dt, t - SC_DEATH.split);

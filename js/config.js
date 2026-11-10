@@ -18,8 +18,43 @@ const DETAIL = {
     scale: { high: 1, medium: 0.5, potato: 0.25 },
     guns: 'high',
     enemies: 'high',
+    lighting: 'high',
+    particles: 1,
+    particleLevels: { high: 1, medium: 0.5, low: 0.25 },
+    deathFx: 'full',
 
     seg(level, n, min = 3) {
         return Math.max(min, Math.round(n * (DETAIL.scale[level] || 1)));
+    },
+
+    skip() {
+        return DETAIL.particles < 1 && Math.random() > DETAIL.particles;
+    },
+
+    litMaterial(opts) {
+        const o = Object.assign({ roughness: 0.75, metalness: 0 }, opts);
+        if (DETAIL.lighting === 'high') {
+            return new THREE.MeshStandardMaterial(o);
+        }
+        const rough = o.roughness;
+        const metal = o.metalness;
+        delete o.roughness;
+        delete o.metalness;
+        if (DETAIL.lighting === 'medium') {
+            o.shininess = 4 + 60 * (1 - rough) * (1 - rough);
+            o.specular = new THREE.Color(0xffffff).multiplyScalar(0.04 + 0.25 * (1 - rough) + 0.2 * metal);
+            return new THREE.MeshPhongMaterial(o);
+        }
+        delete o.flatShading;
+        return new THREE.MeshLambertMaterial(o);
     }
 };
+
+const BOOT = (() => {
+    try {
+        return JSON.parse(localStorage.getItem('fungdung.settings')) || {};
+    } catch (e) {
+        return {};
+    }
+})();
+DETAIL.antialias = BOOT.antialias !== false;

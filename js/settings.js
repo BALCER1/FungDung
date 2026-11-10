@@ -9,7 +9,19 @@ const Settings = {
         darkMode: false,
         devMode: false,
         enemyDetail: 'high',
-        gunDetail: 'high'
+        gunDetail: 'high',
+        antialias: true,
+        lighting: 'high',
+        particles: 'high',
+        deathFx: 'full',
+        showFps: false
+    },
+    choices: {
+        enemyDetail: DETAIL.names,
+        gunDetail: DETAIL.names,
+        lighting: ['high', 'medium', 'low'],
+        particles: ['high', 'medium', 'low'],
+        deathFx: ['full', 'simple']
     },
 
     init() {
@@ -32,7 +44,13 @@ const Settings = {
             dark: $('setDark'),
             dev: $('setDev'),
             enemyDetail: $('setEnemyDetail'),
-            gunDetail: $('setGunDetail')
+            gunDetail: $('setGunDetail'),
+            lighting: $('setLighting'),
+            particles: $('setParticles'),
+            deathFx: $('setDeathFx'),
+            antialias: $('setAntialias'),
+            aaNote: $('setAaNote'),
+            showFps: $('setFps')
         };
 
         document.querySelectorAll('#optionsMenu .tabs button').forEach(btn => {
@@ -52,12 +70,16 @@ const Settings = {
         this.el.dark.onchange = () => this.set('darkMode', this.el.dark.checked);
         this.el.dev.checked = this.values.devMode;
         this.el.dev.onchange = () => this.set('devMode', this.el.dev.checked);
-        for (const k of ['enemyDetail', 'gunDetail']) {
-            if (!DETAIL.names.includes(this.values[k])) {
-                this.values[k] = 'high';
+        for (const k in this.choices) {
+            if (!this.choices[k].includes(this.values[k])) {
+                this.values[k] = this.choices[k][0];
             }
             this.el[k].value = this.values[k];
             this.el[k].onchange = () => this.set(k, this.el[k].value);
+        }
+        for (const k of ['antialias', 'showFps']) {
+            this.el[k].checked = this.values[k];
+            this.el[k].onchange = () => this.set(k, this.el[k].checked);
         }
 
         this.el.fullscreen.value = this.values.fullscreen ? 'fullscreen' : 'windowed';
@@ -128,12 +150,29 @@ const Settings = {
                 ShellcapKit.setDetail(v.enemyDetail);
             }
         }
-        if (DETAIL.guns !== v.gunDetail) {
+        const relight = DETAIL.lighting !== v.lighting;
+        if (DETAIL.guns !== v.gunDetail || relight) {
             DETAIL.guns = v.gunDetail;
-            if (typeof Arsenal !== 'undefined') {
+            DETAIL.lighting = v.lighting;
+            if (typeof Arsenal !== 'undefined' && Arsenal.current) {
                 Arsenal.rebuild();
+                if (relight) {
+                    Arsenal.hands.relight();
+                }
             }
         }
+        const particles = DETAIL.particleLevels[v.particles];
+        if (DETAIL.particles !== particles) {
+            DETAIL.particles = particles;
+            if (typeof Enemies !== 'undefined' && Enemies.fx) {
+                Enemies.fx.setAmount(particles);
+            }
+        }
+        DETAIL.deathFx = v.deathFx;
+        if (Perf.on !== v.showFps) {
+            Perf.set(v.showFps);
+        }
+        this.el.aaNote.hidden = v.antialias === DETAIL.antialias;
 
         this.el.scaleOut.textContent = Math.round(v.renderScale * 100) + '%';
         this.el.fovOut.textContent = v.fov + '°';

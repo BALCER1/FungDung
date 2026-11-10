@@ -105,7 +105,7 @@ class WeaponBuilder {
 
     mat(key, opts) {
         if (!this.mats[key]) {
-            this.mats[key] = new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.75, metalness: 0 }, opts));
+            this.mats[key] = DETAIL.litMaterial(opts);
         }
         return this.mats[key];
     }
@@ -364,7 +364,9 @@ class WeaponBuilder {
         const spike = this.mesh(geo, mat, g);
         core.visible = spike.visible = false;
         const light = new THREE.PointLight(color, 0, 2.5, 2);
-        g.add(light);
+        if (DETAIL.lighting === 'high') {
+            g.add(light);
+        }
         return { group: g, core, spike, light, size, intensity, age: 9 };
     }
 }
@@ -395,10 +397,10 @@ class SporeFX {
     }
 
     emit(o) {
-        if (this.live.length >= this.max) {
+        const shape = o.shape || 'dot';
+        if (this.live.length >= this.max * DETAIL.particles || (shape === 'dot' && DETAIL.skip())) {
             return null;
         }
-        const shape = o.shape || 'dot';
         let p = this.pools[shape].pop();
         if (!p) {
             const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false });
@@ -1124,6 +1126,23 @@ class Weapon {
         this.actT += dt;
         this.prevFireT = this.fireT;
         this.fireT += dt;
+        this.syncBatch();
+    }
+
+    syncBatch() {
+        const want = DETAIL.guns !== 'high' && Batch.supported();
+        if (want && !this.batch) {
+            this.batch = new MeshBatch(this.root, { skip: o => o.name === 'hands' });
+        } else if (!want && this.batch) {
+            this.batch.dispose();
+            this.batch = null;
+        }
+        if (this.batch) {
+            this.batch.sync();
+        }
+        if (this.hands) {
+            this.hands.syncBatch(want);
+        }
     }
 
     pose(dt, move) {
@@ -1234,6 +1253,10 @@ class Weapon {
 
     dispose() {
         this.setHands(null);
+        if (this.batch) {
+            this.batch.dispose();
+            this.batch = null;
+        }
         if (this.def.dispose) {
             this.def.dispose(this);
         }
@@ -1332,8 +1355,11 @@ class WeaponView {
         renderer.autoClear = false;
         renderer.clearDepth();
         const bg = scene.background;
+        const matrices = scene.autoUpdate;
         scene.background = null;
+        scene.autoUpdate = false;
         renderer.render(scene, this.cam);
+        scene.autoUpdate = matrices;
         scene.background = bg;
         renderer.autoClear = auto;
     }

@@ -58,6 +58,7 @@ function solveTwoBone(rootPos, target, a, b, pole, qUpper, qLower) {
 class SporeCloud {
     constructor(max = 1200) {
         this.max = max;
+        this.cap = max;
         this.next = 0;
         this.pos = new Float32Array(max * 3);
         this.col = new Float32Array(max * 3);
@@ -93,9 +94,21 @@ class SporeCloud {
         this.pos.fill(0);
         this.points.geometry.attributes.color.needsUpdate = true;
     }
+    setAmount(k) {
+        this.cap = Math.max(32, Math.round(this.max * k));
+        this.next %= this.cap;
+        for (let i = this.cap; i < this.max; i++) {
+            this.age[i] = 1;
+            this.life[i] = 0;
+        }
+        this.points.geometry.setDrawRange(0, this.cap);
+    }
     emit(x, y, z, vx, vy, vz, color, life, grav = 0, drag = 1) {
+        if (DETAIL.skip()) {
+            return;
+        }
         const i = this.next;
-        this.next = (i + 1) % this.max;
+        this.next = (i + 1) % this.cap;
         const j = i * 3;
         this.pos[j] = x;
         this.pos[j + 1] = y;
@@ -123,7 +136,7 @@ class SporeCloud {
     }
     update(dt) {
         const { pos, vel, col, base, age, life, grav, drag } = this;
-        for (let i = 0; i < this.max; i++) {
+        for (let i = 0; i < this.cap; i++) {
             const j = i * 3;
             if (age[i] >= life[i]) {
                 if (col[j] || col[j + 1] || col[j + 2]) {
@@ -282,6 +295,25 @@ class Enemy {
 
     cool(name) {
         return !(this.cd[name] > 0);
+    }
+
+    syncBatch() {
+        const want = DETAIL.enemies !== 'high' && Batch.supported();
+        if (want && !this.batch) {
+            this.batch = new MeshBatch(this.root, { bounds: new THREE.Sphere(new THREE.Vector3(0, 1, 0), 2.5) });
+        } else if (!want) {
+            this.dropBatch();
+        }
+        if (this.batch) {
+            this.batch.sync();
+        }
+    }
+
+    dropBatch() {
+        if (this.batch) {
+            this.batch.dispose();
+            this.batch = null;
+        }
     }
 
     stop() {
@@ -870,6 +902,7 @@ const Enemies = {
         Arsenal.onShotEnd = shot => this.onShotEnd(shot);
         CommFX.init();
         this.fx = new SporeCloud(1400);
+        this.fx.setAmount(DETAIL.particles);
         this.junk = new THREE.Group();
         this.junk.name = 'enemy-debris';
         scene.add(this.junk);
@@ -934,6 +967,7 @@ const Enemies = {
         this.debris.length = 0;
         for (const e of this.list) {
             DevView.drop(e);
+            e.dropBatch();
         }
         for (const e of this.dying) {
             this.junk.remove(e.root);
@@ -1008,6 +1042,7 @@ const Enemies = {
 
     kill(e) {
         e.dead = true;
+        e.dropBatch();
         if (e.mind) {
             e.mind.remove(e);
         }
@@ -1065,6 +1100,9 @@ const Enemies = {
             if (!e.dead) {
                 this.enterLayer(e);
                 e.update(dt, now);
+                if (!e.dead) {
+                    e.syncBatch();
+                }
             }
         }
         this.enterLayer(null);

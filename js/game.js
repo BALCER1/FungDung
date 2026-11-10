@@ -217,7 +217,9 @@ const Game = {
     },
 
     loop(now) {
-        const dt = Math.min((now - this.last) / 1000, 0.05);
+        const start = performance.now();
+        const interval = now - this.last;
+        const dt = Math.min(interval / 1000, 0.05);
         this.last = now;
         if (this.state === 'playing') {
             Player.update(dt);
@@ -232,6 +234,7 @@ const Game = {
         if (this.room && this.state !== 'mapview') {
             Arsenal.render();
         }
+        Perf.frame(interval, performance.now() - start);
         requestAnimationFrame(t => this.loop(t));
     }
 };

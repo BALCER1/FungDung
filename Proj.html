@@ -400,6 +400,31 @@
           <option value="potato">Potato</option>
         </select>
       </div>
+      <p>Medium and Potato also merge each gun and enemy into a handful of draw calls, which helps most on laptops.</p>
+      <div class="row">Lighting quality
+        <select id="setLighting">
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
+      <div class="row">Particles
+        <select id="setParticles">
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
+      <div class="row">Enemy death effects
+        <select id="setDeathFx">
+          <option value="full">Full</option>
+          <option value="simple">Simple</option>
+        </select>
+      </div>
+      <div class="row">Antialiasing
+        <input id="setAntialias" type="checkbox">
+      </div>
+      <p id="setAaNote" hidden>Antialiasing changes apply after you reload the page.</p>
       <p id="setRes"></p>
     </div>
 
@@ -435,6 +460,10 @@
       <div class="row">Dev mode
         <input id="setDev" type="checkbox">
       </div>
+      <div class="row">Show FPS counter
+        <input id="setFps" type="checkbox">
+      </div>
+      <p>The FPS counter shows frame time and how much of it is spent in game code (JS). If FPS is low and frame time is much higher than JS time, the graphics card is the bottleneck; if JS time is close to frame time, the game code (usually enemy AI) is.</p>
       <p>Shows every enemy's stats, what it's thinking, its vision cone, current path, the pack's memory of you (red = last seen, orange = where it thinks you went) and how long the enemy AI takes each frame.</p>
       <p>While dev mode is on, ` (backtick) hides and shows the overlay.</p>
     </div>
@@ -479,6 +508,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="js/config.js"></script>
 <script src="js/engine.js"></script>
+<script src="js/batch.js"></script>
+<script src="js/perf.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/intro.js"></script>
 <script src="js/rooms/room-kit.js"></script>

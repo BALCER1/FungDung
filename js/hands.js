@@ -448,7 +448,7 @@ class Hands {
         this.scale = opts.scale || 1;
         const pick = (v, d) => (v === undefined ? d : v);
         const gray = pick(opts.color, 0x8a8f96);
-        const plain = c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, metalness: 0.05, vertexColors: false });
+        const plain = c => Hands.plain(c);
         this.regions = {
             shell: plain(pick(opts.shell, gray)),
             flesh: plain(pick(opts.flesh, gray)),
@@ -466,6 +466,35 @@ class Hands {
         this._inv = new THREE.Matrix4();
         this._curl = 0;
         this._warned = {};
+    }
+
+    static plain(color) {
+        return DETAIL.litMaterial({ color, roughness: 0.6, metalness: 0.05, vertexColors: false });
+    }
+
+    syncBatch(want) {
+        if (want && !this.batch) {
+            this.batch = new MeshBatch(this.root);
+        } else if (!want && this.batch) {
+            this.batch.dispose();
+            this.batch = null;
+        }
+        if (this.batch) {
+            this.batch.sync();
+        }
+    }
+
+    relight() {
+        for (const region in this.regions) {
+            const old = this.regions[region];
+            const mat = Hands.plain(old.color);
+            if (old.emissive && mat.emissive) {
+                mat.emissive.copy(old.emissive);
+                mat.emissiveIntensity = old.emissiveIntensity;
+            }
+            this.setMaterial(region, mat);
+            old.dispose();
+        }
     }
 
     static geometry() {

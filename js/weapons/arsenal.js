@@ -12,6 +12,7 @@ const Arsenal = {
 
     init() {
         scene.add(camera);
+        this.ray.layers.enable(BATCH_LAYER);
         this.view = new WeaponView(camera, { fov: 55 });
         this.view.shareLights(scene);
         this.view.addLights();
