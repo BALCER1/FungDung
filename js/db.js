@@ -303,6 +303,7 @@ const DB = {
             lobby_name_invalid: 'Lobby names are 3-24 characters: letters, numbers, spaces and simple punctuation.',
             lobby_password_invalid: 'Lobby passwords need 4 to 64 characters.',
             lobby_peer_invalid: 'Could not set up the connection. Try again.',
+            lan_unavailable: 'LAN lobbies are not available right now because the server could not see your network. Host an Online lobby instead.',
             invalid_credentials: 'Wrong email or password.',
             email_exists: 'That email already has an account. Use Log in instead.',
             user_already_exists: 'That email already has an account. Use Log in instead.',

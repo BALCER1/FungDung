@@ -14,11 +14,13 @@ const Net = {
     onRoster: null,
     onClosed: null,
     onLeft: null,
+    lanTry: null,
 
     TEXT: {
         noPeer: 'Multiplayer could not load. Check your connection and reload the page.',
         server: 'Could not reach the matchmaking server. Check your connection and try again.',
         failed: 'Could not connect to the host. Some networks (school, work, mobile data) block direct connections between players.',
+        lanFailed: 'Could not connect over your local network. Check both devices are on the same Wi-Fi, and allow the microphone on at least one of them. Guest and school Wi-Fi often stop devices talking to each other.',
         lobby_closed: 'That lobby has closed.',
         lobby_started: 'That lobby has already started its run.',
         lobby_full: 'That lobby is full.',
@@ -67,6 +69,94 @@ const Net = {
 
     every(seconds, fn) {
         this.timers.push(setInterval(fn, seconds * 1000));
+    },
+
+    // Browsers hide a device's local IP address from WebRTC (it shows up as a random .local name)
+    // unless the page has microphone permission. On many home networks that name cannot be
+    // resolved, so two devices on the same Wi-Fi cannot reach each other directly. LAN lobbies ask
+    // for the microphone once, stop it straight away and record nothing. Only one of the two
+    // devices needs to allow it. Resolves true if permission was granted.
+    lanAccess() {
+        if (!this.lanTry) {
+            this.lanTry = this.askMic();
+        }
+        return this.lanTry;
+    },
+
+    async askMic() {
+        const md = navigator.mediaDevices;
+        if (!window.isSecureContext || !md || !md.getUserMedia) {
+            return false;
+        }
+        try {
+            const stream = await md.getUserMedia({ audio: true });
+            for (const track of stream.getTracks()) {
+                track.stop();
+            }
+            return true;
+        } catch (err) {
+            return false;
+        }
+    },
+
+    // True if lanAccess() is likely to show a browser prompt.
+    async lanWillAsk() {
+        if (this.lanTry || !window.isSecureContext || !navigator.mediaDevices) {
+            return false;
+        }
+        try {
+            const res = await navigator.permissions.query({ name: 'microphone' });
+            return res.state === 'prompt';
+        } catch (err) {
+            return true;
+        }
+    },
+
+    // This computer's private IPv4 address on the local network, or '' if the browser hides it
+    // (it only shows it after microphone permission, see lanAccess). Used for invite links when
+    // the game was opened as localhost.
+    async lanAddress(ask) {
+        if (typeof RTCPeerConnection === 'undefined') {
+            return '';
+        }
+        if (ask) {
+            await this.lanAccess();
+        }
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        const found = [];
+        try {
+            await new Promise(resolve => {
+                const timer = setTimeout(resolve, 3000);
+                pc.onicecandidate = ev => {
+                    const c = ev.candidate;
+                    if (!c) {
+                        clearTimeout(timer);
+                        resolve();
+                        return;
+                    }
+                    const ip = c.address || c.candidate.split(' ')[4] || '';
+                    if (this.lanRank(ip) > 0 && !found.includes(ip)) {
+                        found.push(ip);
+                    }
+                };
+                pc.createDataChannel('ip');
+                pc.createOffer().then(o => pc.setLocalDescription(o)).catch(resolve);
+            });
+        } finally {
+            pc.close();
+        }
+        found.sort((a, b) => this.lanRank(b) - this.lanRank(a));
+        return found[0] || '';
+    },
+
+    // How likely an address is to be the real home network rather than a virtual adapter
+    // (VirtualBox uses 192.168.56.x, WSL, Hyper-V and Docker usually 172.16-31.x). 0 = not private.
+    lanRank(ip) {
+        return /^192\.168\.56\./.test(ip) ? 1
+            : /^192\.168\./.test(ip) ? 4
+                : /^10\./.test(ip) ? 3
+                    : /^172\.(1[6-9]|2\d|3[01])\./.test(ip) ? 2
+                        : 0;
     },
 
     openPeer() {
@@ -133,7 +223,8 @@ const Net = {
             id: null,
             name: DB.cleanName(opts.name),
             private: !!opts.private,
-            password: opts.private ? String(opts.password || '') : ''
+            password: opts.private ? String(opts.password || '') : '',
+            lan: !!opts.lan
         };
         const res = await this.register(lobby);
         if (res.error) {
@@ -157,7 +248,8 @@ const Net = {
             p_private: lobby.private,
             p_password: lobby.private ? lobby.password : null,
             p_peer: this.id,
-            p_id: lobby.id
+            p_id: lobby.id,
+            p_lan: lobby.lan
         });
     },
 
@@ -208,7 +300,7 @@ const Net = {
             g.name = DB.cleanName(msg.name).slice(0, 16) || 'Player';
             this.guests.set(g.id, g);
             this.roster.push({ id: g.id, name: g.name, host: false });
-            this.post(g.conn, { t: 'welcome', id: g.id, lobby: { id: this.lobby.id, name: this.lobby.name }, roster: this.roster });
+            this.post(g.conn, { t: 'welcome', id: g.id, lobby: { id: this.lobby.id, name: this.lobby.name, lan: this.lobby.lan }, roster: this.roster });
             this.rosterChanged();
             return;
         }
@@ -281,14 +373,15 @@ const Net = {
             this.shutdown();
             return opened;
         }
-        const out = await this.dial(res.data.peer_id, password);
+        const out = await this.dial(res.data.peer_id, password, !!res.data.is_lan);
         if (!out.ok) {
             this.shutdown();
         }
         return out;
     },
 
-    dial(hostPeer, password) {
+    dial(hostPeer, password, lan) {
+        const failed = { ok: false, code: 'failed', error: lan ? this.TEXT.lanFailed : this.TEXT.failed };
         return new Promise(resolve => {
             let done = false;
             let timer = 0;
@@ -300,10 +393,18 @@ const Net = {
                     resolve(result);
                 }
             };
-            this.pending = finish;
-            timer = setTimeout(() => finish({ ok: false, code: 'failed', error: this.TEXT.failed }), CONFIG.lobby.connectTimeout * 1000);
             const conn = this.peer.connect(hostPeer, { reliable: true, serialization: 'json' });
             this.link = conn;
+            let failing = false;
+            const fail = result => {
+                if (done || failing) {
+                    return;
+                }
+                failing = true;
+                this.report(conn).then(detail => finish(Object.assign({}, result, { detail })));
+            };
+            this.pending = result => (result.ok ? finish(result) : fail(result));
+            timer = setTimeout(() => fail(failed), CONFIG.lobby.connectTimeout * 1000);
             conn.on('open', () => {
                 this.post(conn, { t: 'hello', v: CONFIG.netVersion, name: DB.name || 'Guest', password: password || '' });
             });
@@ -315,7 +416,7 @@ const Net = {
                     this.fromHost(msg);
                 } else if (msg.t === 'welcome') {
                     this.role = 'guest';
-                    this.lobby = { id: msg.lobby.id, name: msg.lobby.name, private: false, password: '' };
+                    this.lobby = { id: msg.lobby.id, name: msg.lobby.name, private: false, password: '', lan: !!msg.lobby.lan };
                     this.roster = msg.roster || [];
                     this.started = false;
                     this.heard = performance.now();
@@ -334,12 +435,64 @@ const Net = {
                 if (done) {
                     this.closed('lost');
                 } else {
-                    finish({ ok: false, code: 'failed', error: this.TEXT.failed });
+                    fail(failed);
                 }
             };
             conn.on('close', dropped);
             conn.on('error', dropped);
         });
+    },
+
+    // One line describing why a connection failed, shown under the error so players can report it.
+    // "you" are this device's network addresses, "host" the ones the host sent: host = local
+    // address, srflx = public address, relay = TURN server. "hidden" means the browser replaced
+    // the local IP with a .local name. pairs counts address pairs tried and how many worked.
+    async report(conn) {
+        const parts = [
+            'secure ' + (window.isSecureContext ? 'yes' : 'no'),
+            'mic ' + (this.lanTry ? ((await this.lanTry) ? 'yes' : 'no') : 'not asked')
+        ];
+        const pc = conn && conn.peerConnection;
+        if (!pc) {
+            parts.push('no peer connection');
+            return parts.join(', ');
+        }
+        parts.push('ice ' + pc.iceConnectionState);
+        try {
+            const stats = await pc.getStats();
+            const mine = new Set();
+            const theirs = new Set();
+            let pairs = 0;
+            let worked = 0;
+            stats.forEach(s => {
+                if (s.type === 'local-candidate') {
+                    mine.add(this.describe(s));
+                } else if (s.type === 'remote-candidate') {
+                    theirs.add(this.describe(s));
+                } else if (s.type === 'candidate-pair') {
+                    pairs++;
+                    if (s.state === 'succeeded') {
+                        worked++;
+                    }
+                }
+            });
+            parts.push('you ' + ([...mine].join(' ') || 'none'));
+            parts.push('host ' + ([...theirs].join(' ') || 'none'));
+            parts.push('pairs ' + worked + '/' + pairs);
+        } catch (err) {
+            parts.push('no stats');
+        }
+        return parts.join(', ');
+    },
+
+    describe(c) {
+        const addr = c.address || c.ip || '';
+        const where = !addr ? (c.candidateType === 'host' ? 'hidden' : '?')
+            : addr.endsWith('.local') ? 'hidden'
+                : addr.includes(':') ? 'ip6'
+                    : /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(addr) ? 'lan'
+                        : 'ip4';
+        return c.candidateType + ':' + where;
     },
 
     fromHost(msg) {

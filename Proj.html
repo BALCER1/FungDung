@@ -342,6 +342,15 @@
     color: var(--sub);
   }
 
+  #mainMenu #menuVersion {
+    position: absolute;
+    right: 16px;
+    bottom: 10px;
+    margin: 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
   .screen button.mini {
     width: auto;
     padding: 7px 14px;
@@ -424,6 +433,8 @@
 
   .sheet p.msg {
     min-height: 18px;
+    white-space: pre-line;
+    user-select: text;
     max-width: 480px;
     text-align: center;
   }
@@ -472,6 +483,19 @@
 
   .lobbyRow .lobbyHost {
     color: var(--muted);
+  }
+
+  .lobbyTag {
+    display: inline-block;
+    padding: 1px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    line-height: 1.4;
+    vertical-align: middle;
+    color: var(--red);
+    border: 1px solid var(--red);
+    border-radius: 3px;
   }
 
   .lobbyRow .lobbyCount {
@@ -622,6 +646,7 @@
   <button id="quitBtn">Quit</button>
   <p id="menuPlayer"><span id="menuLead">Connecting...</span><b id="menuName"></b><span id="menuTag"></span></p>
   <p id="menuNotice"></p>
+  <p id="menuVersion"></p>
 </div>
 
 <div id="multiMenu" class="screen sheet" hidden>
@@ -644,7 +669,13 @@
       </select></div>
     <div id="hostPassRow" class="row" hidden><label for="hostPassword">Password</label>
       <input id="hostPassword" type="text" maxlength="64" autocomplete="off" spellcheck="false"></div>
+    <div class="row"><label for="hostNetwork">Network</label>
+      <select id="hostNetwork">
+        <option value="online">Online</option>
+        <option value="lan">LAN (same network)</option>
+      </select></div>
     <p>Up to 4 players. Public lobbies appear in the Join list. Private ones appear with a lock and need the password.</p>
+    <p id="hostLanNote" hidden>LAN lobbies only appear, tagged LAN, for devices on the same Wi-Fi or network as you. Your browser will ask to use the microphone: that lets devices connect to each other directly. It is switched off straight away and nothing is recorded.</p>
     <div class="actions">
       <button class="mini" type="submit">Create</button>
     </div>

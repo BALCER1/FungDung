@@ -18,6 +18,7 @@ const Profile = {
             this.el[id] = document.getElementById(id);
         }
         const e = this.el;
+        document.getElementById('menuVersion').textContent = 'v' + CONFIG.version;
 
         e.profName.addEventListener('input', () => {
             this.nameDirty = true;

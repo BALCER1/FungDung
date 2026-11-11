@@ -149,6 +149,12 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 - Players cannot read or write `lobbies` at all (RLS on, no policies). Server functions:
   `create_lobby`, `heartbeat_lobby`, `close_lobby`, `list_lobbies`, `get_lobby`, `join_lobby`.
   `join_lobby` returns `{ ok, error }` instead of raising, so wrong-password counts are kept.
+- LAN lobbies (`Net.lobby.lan`, `is_lan` in the lobby functions) still use PeerJS and Supabase.
+  The server stores a hash of the host's public address (`caller_net_key()`: full IPv4, IPv6 /64)
+  and `list_lobbies` only shows a LAN lobby to callers with the same key. Joining is not limited,
+  so invite links still work. Before connecting to a LAN lobby, `Net.lanAccess()` asks for the
+  microphone once and stops it at once: browsers only expose real local IPs (instead of `.local`
+  mDNS names) to pages with media permission, and that is what makes same-Wi-Fi connections work.
 - `Game.toMenu` leaves the session. `Net.onClosed` (host left or connection lost) sends a guest to
   the main menu with a message.
 - Two-player tests: two separate headless Chrome instances with their own profiles connect over
