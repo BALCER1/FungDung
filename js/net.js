@@ -25,7 +25,7 @@ const Net = {
         noPeer: 'Multiplayer could not load. Check your connection and reload the page.',
         server: 'Could not reach the matchmaking server. Check your connection and try again.',
         failed: 'Could not connect to the host. Some networks (school, work, mobile data) block direct connections between players.',
-        lanFailed: 'Could not connect over your local network. Check both devices are on the same Wi-Fi, and allow the microphone on at least one of them. Guest and school Wi-Fi often stop devices talking to each other.',
+        lanFailed: 'Could not connect to the host on your network. Allow the microphone when asked, so the devices can connect directly. College and guest Wi-Fi often stop devices talking to each other.',
         lobby_closed: 'That lobby has closed.',
         lobby_started: 'That lobby has already started its run.',
         lobby_full: 'That lobby is full.',
@@ -306,8 +306,7 @@ const Net = {
             id: null,
             name: DB.cleanName(opts.name),
             private: !!opts.private,
-            password: opts.private ? String(opts.password || '') : '',
-            lan: !!opts.lan
+            password: opts.private ? String(opts.password || '') : ''
         };
         const res = await this.register(lobby);
         if (res.error) {
@@ -332,8 +331,7 @@ const Net = {
             p_password: lobby.private ? lobby.password : null,
             p_peer: this.id,
             p_id: lobby.id,
-            p_lan: lobby.lan,
-            p_addrs: lobby.lan ? await this.publicAddrs() : null
+            p_addrs: await this.publicAddrs()
         });
     },
 
@@ -384,7 +382,7 @@ const Net = {
             g.name = DB.cleanName(msg.name).slice(0, 16) || 'Player';
             this.guests.set(g.id, g);
             this.roster.push({ id: g.id, name: g.name, host: false });
-            this.post(g.conn, { t: 'welcome', id: g.id, lobby: { id: this.lobby.id, name: this.lobby.name, lan: this.lobby.lan }, roster: this.roster });
+            this.post(g.conn, { t: 'welcome', id: g.id, lobby: { id: this.lobby.id, name: this.lobby.name }, roster: this.roster });
             this.rosterChanged();
             return;
         }
@@ -439,12 +437,14 @@ const Net = {
         }
     },
 
-    async join(lobbyId, password) {
+    // opts.beforeLan runs when the host is on the same network as this device, before connecting
+    // (Lobby asks for the microphone there, see lanAccess). Returning false cancels the join.
+    async join(lobbyId, password, opts = {}) {
         this.shutdown();
         if (!this.available()) {
             return { ok: false, error: this.TEXT.noPeer };
         }
-        const res = await DB.rpc('join_lobby', { p_lobby: lobbyId, p_password: password || null });
+        const res = await DB.rpc('join_lobby', { p_lobby: lobbyId, p_password: password || null, p_addrs: await this.publicAddrs() });
         if (res.error) {
             return { ok: false, error: res.error };
         }
@@ -452,12 +452,16 @@ const Net = {
             const code = (res.data && res.data.error) || 'failed';
             return { ok: false, code, error: this.TEXT[code] || this.TEXT.failed };
         }
+        const lan = !!res.data.on_lan;
+        if (lan && opts.beforeLan && (await opts.beforeLan()) === false) {
+            return { ok: false, code: 'cancelled', error: '' };
+        }
         const opened = await this.openPeer(await this.relay());
         if (!opened.ok) {
             this.shutdown();
             return opened;
         }
-        const out = await this.dial(res.data.peer_id, password, !!res.data.is_lan);
+        const out = await this.dial(res.data.peer_id, password, lan);
         if (!out.ok) {
             this.shutdown();
         }
@@ -500,7 +504,7 @@ const Net = {
                     this.fromHost(msg);
                 } else if (msg.t === 'welcome') {
                     this.role = 'guest';
-                    this.lobby = { id: msg.lobby.id, name: msg.lobby.name, private: false, password: '', lan: !!msg.lobby.lan };
+                    this.lobby = { id: msg.lobby.id, name: msg.lobby.name, private: false, password: '' };
                     this.roster = msg.roster || [];
                     this.started = false;
                     this.heard = performance.now();

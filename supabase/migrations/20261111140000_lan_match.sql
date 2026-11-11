@@ -194,6 +194,7 @@ $$;
 -- ---------------------------------------------------------------------------
 
 drop function if exists public.list_lobbies();
+drop function if exists public.list_lobbies(text[]);
 
 create or replace function public.list_lobbies(p_addrs text[] default null)
 returns table (

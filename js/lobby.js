@@ -9,7 +9,7 @@ const Lobby = {
     init() {
         for (const id of [
             'multiMsg', 'multiHostBtn', 'multiJoinBtn',
-            'hostForm', 'hostName', 'hostVisibility', 'hostPassRow', 'hostPassword', 'hostNetwork', 'hostLanNote', 'hostMsg',
+            'hostForm', 'hostName', 'hostVisibility', 'hostPassRow', 'hostPassword', 'hostMsg',
             'joinList', 'joinEmpty', 'joinRefreshBtn', 'joinPassForm', 'joinPassLabel', 'joinPassword', 'joinMsg',
             'lobbyTitle', 'lobbyPlayers', 'lobbyLink', 'lobbyCopyBtn', 'lobbyQr', 'lobbyHostNote', 'lobbyMsg',
             'lobbyStartBtn', 'menuNotice'
@@ -30,7 +30,6 @@ const Lobby = {
         on('lobbyStartBtn', () => this.start());
         on('lobbyLeaveBtn', () => this.leave());
         e.hostVisibility.addEventListener('change', () => this.showHost());
-        e.hostNetwork.addEventListener('change', () => this.showHost());
         e.hostForm.addEventListener('submit', ev => {
             ev.preventDefault();
             this.create();
@@ -110,11 +109,10 @@ const Lobby = {
     showHost() {
         const e = this.el;
         e.hostPassRow.hidden = e.hostVisibility.value !== 'private';
-        e.hostLanNote.hidden = e.hostNetwork.value !== 'lan';
     },
 
-    // Asks for the microphone before a LAN lobby connects (see Net.lanAccess). Never blocks
-    // hosting or joining: if the player says no, the normal connection is tried anyway.
+    // Asks for the microphone before joining a host on the same network (see Net.lanAccess). Never
+    // blocks joining: if the player says no, the normal connection (or the relay) is used.
     async lanAccess(msgEl) {
         if (await Net.lanWillAsk()) {
             this.say(msgEl, 'Your browser will ask to use the microphone. It only lets devices on your network connect directly, is switched off straight away, and nothing is recorded.', true);
@@ -130,7 +128,6 @@ const Lobby = {
         const name = DB.cleanName(e.hostName.value);
         const isPrivate = e.hostVisibility.value === 'private';
         const password = e.hostPassword.value;
-        const lan = e.hostNetwork.value === 'lan';
         if (name.length < 3) {
             this.say(e.hostMsg, 'Lobby names need at least 3 characters.');
             return;
@@ -140,15 +137,8 @@ const Lobby = {
             return;
         }
         this.busy = true;
-        if (lan) {
-            await this.lanAccess(e.hostMsg);
-            if (Game.state !== 'host') {
-                this.busy = false;
-                return;
-            }
-        }
         this.say(e.hostMsg, 'Creating lobby...', true);
-        const res = await Net.host({ name, private: isPrivate, password, lan });
+        const res = await Net.host({ name, private: isPrivate, password });
         this.busy = false;
         if (!res.ok) {
             this.say(e.hostMsg, res.error);
@@ -195,7 +185,7 @@ const Lobby = {
                 span.textContent = text;
                 row.appendChild(span);
             };
-            if (l.is_lan) {
+            if (l.on_lan) {
                 cell('lobbyTag', 'LAN');
             }
             cell('lobbyName', (l.is_private ? '\u{1F512} ' : '') + l.name);
@@ -247,16 +237,19 @@ const Lobby = {
         }
         this.busy = true;
         this.showJoin();
-        if (lobby.is_lan) {
-            await this.lanAccess(e.joinMsg);
-            if (Game.state !== 'join') {
-                this.busy = false;
-                return;
+        const connecting = 'Connecting to "' + lobby.name + '"...';
+        this.say(e.joinMsg, connecting, true);
+        const res = await Net.join(lobby.id, password, {
+            beforeLan: async () => {
+                await this.lanAccess(e.joinMsg);
+                this.say(e.joinMsg, connecting, true);
+                return Game.state === 'join';
             }
-        }
-        this.say(e.joinMsg, 'Connecting to "' + lobby.name + '"...', true);
-        const res = await Net.join(lobby.id, password);
+        });
         this.busy = false;
+        if (res.code === 'cancelled') {
+            return;
+        }
         if (res.ok) {
             this.picked = null;
             this.say(e.joinMsg, '');
@@ -348,7 +341,7 @@ const Lobby = {
 
     // Swaps localhost in the invite link for this computer's address on the local network.
     async fixLocalInvite(lobbyId) {
-        const ip = await Net.lanAddress(Net.lobby.lan);
+        const ip = await Net.lanAddress(true);
         if (Game.state !== 'lobby' || !Net.lobby || Net.lobby.id !== lobbyId) {
             return;
         }
@@ -368,12 +361,6 @@ const Lobby = {
             return;
         }
         e.lobbyTitle.textContent = Net.lobby.name;
-        if (Net.lobby.lan) {
-            const tag = document.createElement('span');
-            tag.className = 'lobbyTag';
-            tag.textContent = 'LAN';
-            e.lobbyTitle.append(' ', tag);
-        }
         e.lobbyPlayers.textContent = '';
         for (const p of Net.roster) {
             const row = document.createElement('div');
@@ -386,8 +373,7 @@ const Lobby = {
             row.append(name, tag);
             e.lobbyPlayers.appendChild(row);
         }
-        const count = Net.roster.length + '/' + CONFIG.maxPlayers + ' players'
-            + (Net.lobby.lan && Net.isHost ? '. LAN lobby: only devices on your network see it in the Join list. Anyone else needs the invite link' : '');
+        const count = Net.roster.length + '/' + CONFIG.maxPlayers + ' players';
         e.lobbyStartBtn.hidden = !Net.isHost;
         e.lobbyHostNote.textContent = Net.isHost
             ? count + '. You are the host: the game pauses for everyone if you switch tabs or minimise this window.'

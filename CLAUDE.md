@@ -155,14 +155,15 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 - Players cannot read or write `lobbies` at all (RLS on, no policies). Server functions:
   `create_lobby`, `heartbeat_lobby`, `close_lobby`, `list_lobbies`, `get_lobby`, `join_lobby`.
   `join_lobby` returns `{ ok, error }` instead of raising, so wrong-password counts are kept.
-- LAN lobbies (`Net.lobby.lan`, `is_lan` in the lobby functions) still use PeerJS and Supabase.
-  Each device sends the public addresses STUN reports for it (`Net.publicAddrs()`, `p_addrs`);
-  the server adds the request address and stores hashes (`net_keys`: full IPv4, IPv6 /64, private
-  addresses ignored). `list_lobbies` shows a LAN lobby when any key matches, because devices on
-  one Wi-Fi can reach Supabase over IPv4 and IPv6 or a relay. Joining is not limited,
-  so invite links still work. Before connecting to a LAN lobby, `Net.lanAccess()` asks for the
-  microphone once and stops it at once: browsers only expose real local IPs (instead of `.local`
-  mDNS names) to pages with media permission, and that is what makes same-Wi-Fi connections work.
+- LAN: there is no separate LAN lobby type. Every host and every Join list or join call sends the
+  public addresses STUN reports for the device (`Net.publicAddrs()`, `p_addrs`); the server adds
+  the request address and compares hashes (`net_keys`: full IPv4, IPv6 /64, private addresses
+  ignored). `list_lobbies` returns `on_lan` (host on the caller's network: tagged LAN, listed
+  first) and `join_lobby` returns `on_lan` too. When it is true, `Net.join` calls
+  `opts.beforeLan`, where `Lobby` asks for the microphone once and stops it at once: browsers only
+  expose real local IPs (instead of `.local` mDNS names) to pages with media permission, so the
+  devices can connect directly instead of through the relay. Lobbies with the old `is_lan` flag
+  are still only listed on their own network.
 - `Game.toMenu` leaves the session. `Net.onClosed` (host left or connection lost) sends a guest to
   the main menu with a message.
 - Two-player tests: two separate headless Chrome instances with their own profiles connect over
