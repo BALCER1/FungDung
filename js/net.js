@@ -15,6 +15,8 @@ const Net = {
     onClosed: null,
     onLeft: null,
     lanTry: null,
+    addrs: null,
+    addrsAt: 0,
 
     TEXT: {
         noPeer: 'Multiplayer could not load. Check your connection and reload the page.',
@@ -149,6 +151,50 @@ const Net = {
         return found[0] || '';
     },
 
+    // This device's public addresses as a STUN server sees them (the same server PeerJS uses).
+    // The lobby server hashes them to decide which LAN lobbies are on the same network, because
+    // two devices on one Wi-Fi can reach the lobby server by different routes (IPv4 and IPv6,
+    // iCloud Private Relay). Kept for a minute. Resolves [] if STUN is blocked.
+    async publicAddrs() {
+        const now = performance.now();
+        if (this.addrs && now - this.addrsAt < 60000) {
+            return this.addrs;
+        }
+        const found = [];
+        if (typeof RTCPeerConnection !== 'undefined') {
+            let pc = null;
+            try {
+                pc = new RTCPeerConnection({ iceServers: [{ urls: CONFIG.lobby.stun }] });
+                await new Promise(resolve => {
+                    const timer = setTimeout(resolve, CONFIG.lobby.stunTimeout * 1000);
+                    pc.onicecandidate = ev => {
+                        const c = ev.candidate;
+                        if (!c) {
+                            clearTimeout(timer);
+                            resolve();
+                            return;
+                        }
+                        const parts = c.candidate.split(' ');
+                        const type = c.type || parts[parts.indexOf('typ') + 1];
+                        const ip = c.address || parts[4] || '';
+                        if (type === 'srflx' && ip && !found.includes(ip)) {
+                            found.push(ip);
+                        }
+                    };
+                    pc.createDataChannel('addr');
+                    pc.createOffer().then(o => pc.setLocalDescription(o)).catch(resolve);
+                });
+            } catch (err) {
+            }
+            if (pc) {
+                pc.close();
+            }
+        }
+        this.addrs = found.slice(0, 4);
+        this.addrsAt = now;
+        return this.addrs;
+    },
+
     // How likely an address is to be the real home network rather than a virtual adapter
     // (VirtualBox uses 192.168.56.x, WSL, Hyper-V and Docker usually 172.16-31.x). 0 = not private.
     lanRank(ip) {
@@ -242,14 +288,15 @@ const Net = {
         return { ok: true };
     },
 
-    register(lobby) {
+    async register(lobby) {
         return DB.rpc('create_lobby', {
             p_name: lobby.name,
             p_private: lobby.private,
             p_password: lobby.private ? lobby.password : null,
             p_peer: this.id,
             p_id: lobby.id,
-            p_lan: lobby.lan
+            p_lan: lobby.lan,
+            p_addrs: lobby.lan ? await this.publicAddrs() : null
         });
     },
 

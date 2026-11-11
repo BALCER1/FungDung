@@ -150,8 +150,10 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
   `create_lobby`, `heartbeat_lobby`, `close_lobby`, `list_lobbies`, `get_lobby`, `join_lobby`.
   `join_lobby` returns `{ ok, error }` instead of raising, so wrong-password counts are kept.
 - LAN lobbies (`Net.lobby.lan`, `is_lan` in the lobby functions) still use PeerJS and Supabase.
-  The server stores a hash of the host's public address (`caller_net_key()`: full IPv4, IPv6 /64)
-  and `list_lobbies` only shows a LAN lobby to callers with the same key. Joining is not limited,
+  Each device sends the public addresses STUN reports for it (`Net.publicAddrs()`, `p_addrs`);
+  the server adds the request address and stores hashes (`net_keys`: full IPv4, IPv6 /64, private
+  addresses ignored). `list_lobbies` shows a LAN lobby when any key matches, because devices on
+  one Wi-Fi can reach Supabase over IPv4 and IPv6 or a relay. Joining is not limited,
   so invite links still work. Before connecting to a LAN lobby, `Net.lanAccess()` asks for the
   microphone once and stops it at once: browsers only expose real local IPs (instead of `.local`
   mDNS names) to pages with media permission, and that is what makes same-Wi-Fi connections work.

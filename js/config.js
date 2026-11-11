@@ -25,7 +25,9 @@ const CONFIG = {
         refresh: 4,
         connectTimeout: 15,
         pingEvery: 4,
-        pingTimeout: 16
+        pingTimeout: 16,
+        stun: 'stun:stun.l.google.com:19302',
+        stunTimeout: 3
     },
     targeting: {
         hold: 3,

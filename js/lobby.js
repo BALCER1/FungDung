@@ -168,7 +168,7 @@ const Lobby = {
     },
 
     async refreshList() {
-        const res = await DB.rpc('list_lobbies');
+        const res = await DB.rpc('list_lobbies', { p_addrs: await Net.publicAddrs() });
         if (Game.state !== 'join') {
             return;
         }
