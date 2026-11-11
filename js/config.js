@@ -29,6 +29,12 @@ const CONFIG = {
         stun: 'stun:stun.l.google.com:19302',
         stunTimeout: 3
     },
+    relay: {
+        fn: 'turn',
+        timeout: 4,
+        refresh: 6 * 3600,
+        retry: 60
+    },
     targeting: {
         hold: 3,
         stick: 12,

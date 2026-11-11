@@ -135,7 +135,13 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 ## Networking and lobbies
 
 - Libraries: PeerJS 1.5.5 (global `Peer`) and qrcode-generator 2.0.4 (global `qrcode`), both pinned
-  in `Proj.html`. PeerJS uses its public signalling server and its default STUN and TURN servers.
+  in `Proj.html`. PeerJS uses its public signalling server.
+- Relay: `Net.relay()` gets short-lived Cloudflare TURN credentials from the Supabase Edge Function
+  `supabase/functions/turn/index.ts` (secrets `CF_TURN_KEY_ID`, `CF_TURN_API_TOKEN` live only in
+  Supabase) and `Net.openPeer` passes them to PeerJS. WebRTC still prefers a direct route; the
+  relay is what makes networks with client isolation (college Wi-Fi, Ethernet and Wi-Fi on
+  separate VLANs) work. If the function is missing or fails, PeerJS's default servers are used.
+  Settings are in `CONFIG.relay`. The user deploys the function by pasting it in the dashboard.
 - `Net.role` is `null`, `'host'` or `'guest'`. A player's id is their PeerJS id. `Net.roster` is
   `[{ id, name, host }]`, owned by the host and broadcast on every change.
 - Messages are JSON objects `{ t: type, ... }` on one reliable connection per guest. Register a

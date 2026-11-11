@@ -17,6 +17,9 @@ const Net = {
     lanTry: null,
     addrs: null,
     addrsAt: 0,
+    relayList: null,
+    relayAt: 0,
+    relayFailAt: -Infinity,
 
     TEXT: {
         noPeer: 'Multiplayer could not load. Check your connection and reload the page.',
@@ -205,7 +208,39 @@ const Net = {
                         : 0;
     },
 
-    openPeer() {
+    // Short-lived TURN relay credentials from the "turn" Supabase Edge Function (Cloudflare).
+    // A relay lets two devices connect when their network stops them reaching each other
+    // directly, as college Wi-Fi often does. WebRTC still prefers a direct route and only uses the
+    // relay when nothing else works. Resolves null if the function is missing or fails, and then
+    // PeerJS uses its default servers as before.
+    async relay() {
+        const now = performance.now();
+        const cfg = CONFIG.relay;
+        if (this.relayList && now - this.relayAt < cfg.refresh * 1000) {
+            return this.relayList;
+        }
+        if (!DB.online || !DB.client || !DB.client.functions || now - this.relayFailAt < cfg.retry * 1000) {
+            return this.relayList;
+        }
+        try {
+            const res = await Promise.race([
+                DB.client.functions.invoke(cfg.fn, { body: {} }),
+                new Promise(resolve => setTimeout(() => resolve({ error: 'timeout' }), cfg.timeout * 1000))
+            ]);
+            const list = res && !res.error && res.data && res.data.iceServers;
+            if (Array.isArray(list) && list.length) {
+                this.relayList = list;
+                this.relayAt = now;
+            } else {
+                this.relayFailAt = now;
+            }
+        } catch (err) {
+            this.relayFailAt = now;
+        }
+        return this.relayList;
+    },
+
+    openPeer(relay) {
         return new Promise(resolve => {
             let done = false;
             let timer = 0;
@@ -218,7 +253,9 @@ const Net = {
             };
             let peer;
             try {
-                peer = new Peer(this.newId());
+                peer = relay
+                    ? new Peer(this.newId(), { config: { iceServers: [{ urls: CONFIG.lobby.stun }].concat(relay) } })
+                    : new Peer(this.newId());
             } catch (err) {
                 finish({ ok: false, error: this.TEXT.server });
                 return;
@@ -259,7 +296,7 @@ const Net = {
         if (!this.available()) {
             return { ok: false, error: this.TEXT.noPeer };
         }
-        const opened = await this.openPeer();
+        const opened = await this.openPeer(await this.relay());
         if (!opened.ok) {
             this.shutdown();
             return opened;
@@ -415,7 +452,7 @@ const Net = {
             const code = (res.data && res.data.error) || 'failed';
             return { ok: false, code, error: this.TEXT[code] || this.TEXT.failed };
         }
-        const opened = await this.openPeer();
+        const opened = await this.openPeer(await this.relay());
         if (!opened.ok) {
             this.shutdown();
             return opened;
@@ -497,7 +534,8 @@ const Net = {
     async report(conn) {
         const parts = [
             'secure ' + (window.isSecureContext ? 'yes' : 'no'),
-            'mic ' + (this.lanTry ? ((await this.lanTry) ? 'yes' : 'no') : 'not asked')
+            'mic ' + (this.lanTry ? ((await this.lanTry) ? 'yes' : 'no') : 'not asked'),
+            'relay ' + (this.relayList ? 'yes' : 'no')
         ];
         const pc = conn && conn.peerConnection;
         if (!pc) {
