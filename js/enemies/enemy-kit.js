@@ -748,6 +748,132 @@ class Enemy {
         this.vel[axis] = 0;
     }
 
+    setMood(i) {
+        this.mood = i;
+    }
+    kick() {}
+    packState() {
+        return null;
+    }
+    applyState() {}
+    scaleHealth(k) {
+        this.hp = this.maxHp = Math.round(this.maxHp * k);
+    }
+    showHit(partId, point) {
+        Enemies.fx.burst(point, 5, new THREE.Color(this.def.color), 2.6, 0.55, { grav: 2 });
+    }
+
+    packNet() {
+        const a = this.action;
+        const p = this.pos;
+        const v = this.vel;
+        const flags = (this.onGround ? 1 : 0) | (this.blockT > 0 ? 2 : 0) | (this.blockZone === 'low' ? 4 : 0) |
+            (this.seesPlayer ? 8 : 0) | (this.engaged ? 16 : 0) | (this.side > 0 ? 32 : 0);
+        return [
+            this.id, Math.round(p.x * 100), Math.round(p.y * 100), Math.round(p.z * 100), Math.round(this.yaw * 100),
+            Math.round(v.x * 10), Math.round(v.y * 10), Math.round(v.z * 10), flags, Math.round(this.crouch * 100),
+            Math.max(0, Enemies.INTENTS.indexOf(this.intent)), this.mood || 0, -1,
+            Math.max(0, Math.round(100 * this.hp / this.maxHp)), a ? Math.round(a.t * 100) : -1
+        ];
+    }
+
+    applyNet(s, i, players) {
+        const first = !this.net;
+        const n = this.net || (this.net = {});
+        n.x = s[i + 1] / 100;
+        n.y = s[i + 2] / 100;
+        n.z = s[i + 3] / 100;
+        n.yaw = s[i + 4] / 100;
+        n.vx = s[i + 5] / 10;
+        n.vy = s[i + 6] / 10;
+        n.vz = s[i + 7] / 10;
+        n.crouch = s[i + 9] / 100;
+        n.age = 0;
+        const f = s[i + 8];
+        const a = this.action;
+        const climbing = !!a && a.name === 'mantle';
+        const ground = !!(f & 1);
+        if (!climbing) {
+            if (ground && !this.onGround && !first) {
+                this.landed();
+            }
+            this.onGround = ground;
+        }
+        this.blockT = f & 2 ? 1 : 0;
+        this.blockZone = f & 4 ? 'low' : 'high';
+        this.seesPlayer = !!(f & 8);
+        this.engaged = !!(f & 16);
+        this.side = f & 32 ? 1 : -1;
+        this.intent = Enemies.INTENTS[s[i + 10]] || 'idle';
+        if (this.mood !== s[i + 11]) {
+            this.setMood(s[i + 11]);
+        }
+        this.target = players[s[i + 12]] || null;
+        this.hp = this.maxHp * s[i + 13] / 100;
+        const t = s[i + 14] / 100;
+        if (a && !climbing && t >= 0 && Math.abs(a.t - t) > 0.2) {
+            a.t = t;
+        }
+    }
+
+    setAction(seq, packed) {
+        const same = this.actSeq === seq;
+        this.actSeq = seq;
+        if (!packed) {
+            if (!(this.action && this.action.name === 'dying')) {
+                this.action = null;
+            }
+            return;
+        }
+        const a = Enemies.unpackAction(packed);
+        if (same && this.action) {
+            for (const k in a) {
+                if (!Enemies.VOLATILE[k]) {
+                    this.action[k] = a[k];
+                }
+            }
+            return;
+        }
+        if (same) {
+            return;
+        }
+        a.t = a.t || 0;
+        if (a.beats && !a.done) {
+            a.done = [];
+        }
+        this.action = a;
+    }
+
+    puppetUpdate(dt, now) {
+        const n = this.net;
+        const a = this.action;
+        if (a) {
+            a.t += dt;
+        }
+        if (n) {
+            n.age += dt;
+            const lead = Math.min(n.age, 0.12);
+            _ev.set(n.x + n.vx * lead, n.y + n.vy * lead, n.z + n.vz * lead);
+            if (this.pos.distanceToSquared(_ev) > 25) {
+                this.pos.copy(_ev);
+            } else {
+                this.pos.lerp(_ev, 1 - Math.exp(-16 * dt));
+            }
+            this.yaw = wrapAngle(this.yaw + wrapAngle(n.yaw - this.yaw) * (1 - Math.exp(-14 * dt)));
+            this.vel.set(n.vx, n.vy, n.vz);
+            this.crouch += (n.crouch - this.crouch) * (1 - Math.exp(-12 * dt));
+        }
+        this.visY = this.onGround ? this.visY + (this.pos.y - this.visY) * (1 - Math.exp(-16 * dt)) : this.pos.y;
+        _sphere.center.set(this.pos.x, this.pos.y + this.height * 0.5, this.pos.z);
+        _sphere.radius = 1.6;
+        this.onScreen = Enemies.frustum.intersectsSphere(_sphere);
+        this.root.position.set(this.pos.x, this.visY, this.pos.z);
+        this.root.rotation.y = this.yaw;
+        if (this.onScreen || Players.local.pos.distanceTo(this.pos) < 8) {
+            this.animate(dt, now);
+        }
+    }
+
     landed() {}
     animate() {}
 }
@@ -988,6 +1114,20 @@ const Enemies = {
     targets: [],
     nextId: 1,
     byId: new Map(),
+    puppets: false,
+    synced: false,
+    record: false,
+    out: [],
+    remote: null,
+    partySize: 1,
+    countScale: 1,
+    healthScale: 1,
+    netTick: 0,
+    INTENTS: ['idle', 'roam', 'investigate', 'search', 'chase', 'rush', 'flank', 'lurk', 'retreat', 'regen'],
+    VOLATILE: {
+        t: true, phase: true, u: true, armW: true, scrab: true, stepW: true, gripped: true, stepped: true,
+        done: true, pulse: true, sent: true, hit: true
+    },
     dev: false,
     overlay: true,
     ready: false,
@@ -1041,6 +1181,10 @@ const Enemies = {
     load(room) {
         this.clear();
         this.room = room;
+        const extra = Math.max(0, this.partySize - 1);
+        this.countScale = 1 + CONFIG.coopEnemyCount * extra;
+        this.healthScale = 1 + CONFIG.coopEnemyHealth * extra;
+        Players.damageScale = 1 + CONFIG.coopEnemyDamage * extra;
         if (!room.enemies || !room.enemies.length || !room.bounds) {
             return;
         }
@@ -1073,6 +1217,9 @@ const Enemies = {
         this.list.length = 0;
         this.byId.clear();
         this.nextId = 1;
+        this.puppets = false;
+        this.synced = false;
+        this.out.length = 0;
         this.minds = {};
         this.group = null;
         this.nav = null;
@@ -1085,9 +1232,11 @@ const Enemies = {
 
     populate(spec) {
         const nav = this.nav;
+        const k = this.countScale;
+        const grow = n => Math.max(n + (k > 1 ? 1 : 0), Math.round(n * k));
         const count = Array.isArray(spec.count)
-            ? spec.count[0] + Math.floor(Rng.w() * (spec.count[1] - spec.count[0] + 1))
-            : spec.count || 1;
+            ? grow(spec.count[0]) + Math.floor(Rng.w() * (grow(spec.count[1]) - grow(spec.count[0]) + 1))
+            : grow(spec.count || 1);
         const spawnZ = this.room.spawn.z;
         const ok = i => !nav.blocked[i] && !nav.over[i] && nav.cz(i) < spawnZ - 18 &&
             this.list.every(e => Math.hypot(e.pos.x - nav.cx(i), e.pos.z - nav.cz(i)) > 2);
@@ -1126,7 +1275,292 @@ const Enemies = {
         this.list.push(e);
         mind.add(e);
         e.root.position.copy(e.pos);
+        if (this.healthScale !== 1) {
+            e.scaleHealth(this.healthScale);
+        }
         return e;
+    },
+
+    // ---- guests: enemies are puppets driven by the host
+
+    loadPuppets(room) {
+        this.clear();
+        this.room = room;
+        this.puppets = true;
+        if (room.bounds) {
+            this.nav = new NavGrid(room, { radius: 0.48 });
+        }
+        this.group = new THREE.Group();
+        this.group.name = 'enemies';
+        room.group.add(this.group);
+    },
+
+    spawnPuppets(list) {
+        for (const row of list) {
+            const def = this.defs[row[1]];
+            if (!def || this.byId.has(row[0])) {
+                continue;
+            }
+            const e = def.create(def, row[2], row[3], row[4]);
+            e.id = row[0];
+            e.puppet = true;
+            e.yaw = e.faceYaw = row[5];
+            this.group.add(e.root);
+            e.root.position.copy(e.pos);
+            e.root.rotation.y = e.yaw;
+            this.byId.set(e.id, e);
+            this.list.push(e);
+            if (row[6]) {
+                e.applyState(row[6]);
+            }
+            e.setAction(row[7], row[8]);
+        }
+        this.synced = true;
+    },
+
+    applySnapshot(s, players) {
+        for (let i = 0; i + 14 < s.length; i += 15) {
+            const e = this.byId.get(s[i]);
+            if (e) {
+                e.applyNet(s, i, players);
+            }
+        }
+    },
+
+    applyEvents(list) {
+        for (const ev of list) {
+            const kind = ev[0];
+            if (kind === 'v') {
+                const from = new THREE.Vector3(ev[1], ev[2], ev[3]);
+                for (const id of ev[5]) {
+                    const kin = this.byId.get(id);
+                    if (kin) {
+                        CommFX.vine(from, kin.pos, ev[4]);
+                    }
+                }
+                continue;
+            }
+            const e = this.byId.get(ev[1]);
+            if (!e) {
+                continue;
+            }
+            if (kind === 'h') {
+                e.showHit(ev[2], new THREE.Vector3(ev[3], ev[4], ev[5]), new THREE.Vector3(ev[6], 0, ev[7]), ev[8], ev[9]);
+            } else if (kind === 'k') {
+                e.kick(ev[2], new THREE.Vector3(ev[3], 0, ev[4]));
+            } else if (kind === 'd') {
+                if (e.die) {
+                    e.lastHeavy = !!ev[5];
+                    e.die(new THREE.Vector3(ev[2], ev[3], ev[4]));
+                } else {
+                    this.remove(e);
+                }
+            } else if (kind === 'a') {
+                e.setAction(ev[2], ev[3]);
+            } else if (kind === 'p') {
+                e.applyState(ev[2]);
+            }
+        }
+    },
+
+    updatePuppets(dt) {
+        this.time += dt;
+        const now = this.time;
+        this.projM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+        this.frustum.setFromProjectionMatrix(this.projM);
+        for (const e of this.list) {
+            if (!e.dead) {
+                e.puppetUpdate(dt, now);
+                if (!e.dead) {
+                    e.syncBatch();
+                }
+            }
+        }
+        for (let i = this.list.length - 1; i >= 0; i--) {
+            if (this.list[i].dead) {
+                this.list.splice(i, 1);
+            }
+        }
+        this.pushLocal();
+        this.effects(dt, now);
+        if (this.dev && this.overlay) {
+            DevView.draw(this, now);
+        }
+    },
+
+    pushLocal() {
+        if (!Players.local.inRoom) {
+            return;
+        }
+        for (const a of this.list) {
+            const dx = Player.pos.x - a.pos.x;
+            const dz = Player.pos.z - a.pos.z;
+            const min = a.radius + CONFIG.radius + 0.05;
+            const d2 = dx * dx + dz * dz;
+            if (!a.dead && d2 < min * min && d2 > 1e-6 && Math.abs(Player.pos.y - a.pos.y) < 1.4) {
+                const d = Math.sqrt(d2);
+                const o = min - d;
+                const p = _ev2.copy(Player.pos);
+                p.x += dx / d * o * 0.6;
+                p.z += dz / d * o * 0.6;
+                if (!Player.hits(p)) {
+                    Player.pos.copy(p);
+                }
+            }
+        }
+    },
+
+    // ---- host: what guests need to draw the enemies
+
+    emit(ev) {
+        if (this.record) {
+            this.out.push(ev);
+        }
+    },
+
+    packValue(v) {
+        if (typeof v === 'number') {
+            return Math.round(v * 1000) / 1000;
+        }
+        if (typeof v === 'string' || typeof v === 'boolean') {
+            return v;
+        }
+        if (v && v.isVector3) {
+            return { v: [Math.round(v.x * 1000) / 1000, Math.round(v.y * 1000) / 1000, Math.round(v.z * 1000) / 1000] };
+        }
+        if (Array.isArray(v)) {
+            return v.map(x => this.packValue(x)).filter(x => x !== undefined);
+        }
+        return undefined;
+    },
+
+    packAction(a) {
+        const out = {};
+        for (const k in a) {
+            const v = this.packValue(a[k]);
+            if (v !== undefined) {
+                out[k] = v;
+            }
+        }
+        return out;
+    },
+
+    reviveValue(v) {
+        if (Array.isArray(v)) {
+            return v.map(x => this.reviveValue(x));
+        }
+        if (v && typeof v === 'object' && Array.isArray(v.v)) {
+            return new THREE.Vector3(+v.v[0] || 0, +v.v[1] || 0, +v.v[2] || 0);
+        }
+        return v;
+    },
+
+    unpackAction(packed) {
+        const a = {};
+        for (const k in packed) {
+            a[k] = this.reviveValue(packed[k]);
+        }
+        a.name = String(a.name || '');
+        return a;
+    },
+
+    actionSig(a) {
+        let sig = '';
+        for (const k in a) {
+            if (!this.VOLATILE[k]) {
+                const v = this.packValue(a[k]);
+                if (v !== undefined) {
+                    sig += k + ':' + JSON.stringify(v) + ';';
+                }
+            }
+        }
+        return sig;
+    },
+
+    diff(e) {
+        const a = e.action;
+        if (a !== e.netAct) {
+            e.netAct = a;
+            e.netSeq = (e.netSeq || 0) + 1;
+            e.netSig = null;
+        }
+        const sig = a ? this.actionSig(a) : '';
+        if (sig !== e.netSig) {
+            e.netSig = sig;
+            this.out.push(['a', e.id, e.netSeq, a ? this.packAction(a) : null]);
+        }
+        if ((this.netTick + e.id) % 5 === 0) {
+            const st = e.packState();
+            const key = st ? st.join() : '';
+            if (key !== e.netState) {
+                e.netState = key;
+                if (st) {
+                    this.out.push(['p', e.id, st]);
+                }
+            }
+        }
+    },
+
+    snapshot(indexOf) {
+        const s = [];
+        this.netTick++;
+        for (const e of this.list) {
+            if (e.dead) {
+                continue;
+            }
+            this.diff(e);
+            const row = e.packNet();
+            row[12] = e.target ? indexOf(e.target) : -1;
+            for (const v of row) {
+                s.push(v);
+            }
+        }
+        return s;
+    },
+
+    fullState() {
+        const r = v => Math.round(v * 100) / 100;
+        const out = [];
+        for (const e of this.list) {
+            if (e.dead) {
+                continue;
+            }
+            this.diff(e);
+            out.push([
+                e.id, e.type, r(e.pos.x), r(e.pos.y), r(e.pos.z), r(e.yaw), e.packState(), e.netSeq || 0,
+                e.action ? this.packAction(e.action) : null
+            ]);
+        }
+        return out;
+    },
+
+    remoteShot(shot, hits, miss, fired) {
+        const rank = { shell: 1, flesh: 2, break: 3, crit: 4, kill: 5 };
+        let best = null;
+        const better = res => {
+            if (res && (!best || rank[res] > rank[best])) {
+                best = res;
+            }
+        };
+        if (fired) {
+            this.onFire(shot);
+        } else {
+            this.blast = null;
+        }
+        for (const h of hits) {
+            const e = this.byId.get(h[0]);
+            const found = e && !e.dead && e.partById ? e.partById(h[1]) : null;
+            const point = new THREE.Vector3(+h[2] || 0, +h[3] || 0, +h[4] || 0);
+            if (!found || point.distanceTo(e.pos) > 5) {
+                continue;
+            }
+            better(this.applyHit(e, found.part, { point, object: found.mesh }, shot));
+        }
+        if (miss && this.nav) {
+            this.noise(miss, 7, 'impact', shot.origin, shot.by);
+        }
+        better(this.finishShot(shot));
+        return best;
     },
 
     get(id) {
@@ -1187,6 +1621,10 @@ const Enemies = {
     },
 
     update(dt) {
+        if (this.puppets) {
+            this.updatePuppets(dt);
+            return;
+        }
         if (!this.nav) {
             return;
         }
@@ -1218,6 +1656,17 @@ const Enemies = {
                 this.list.splice(i, 1);
             }
         }
+        this.effects(dt, now);
+
+        const P = this.perf;
+        P.ms += (performance.now() - t0 - P.ms) * 0.1;
+        P.fps += (1 / Math.max(dt, 1e-3) - P.fps) * 0.1;
+        if (this.dev && this.overlay) {
+            DevView.draw(this, now);
+        }
+    },
+
+    effects(dt, now) {
         for (let i = this.dying.length - 1; i >= 0; i--) {
             if (this.dying[i].updateDying(dt, now)) {
                 this.junk.remove(this.dying[i].root);
@@ -1230,13 +1679,6 @@ const Enemies = {
         this.applyShake(dt);
         this.hitT = Math.max(0, this.hitT - dt);
         this.hitEl.style.opacity = (this.hitT / 0.18).toFixed(2);
-
-        const P = this.perf;
-        P.ms += (performance.now() - t0 - P.ms) * 0.1;
-        P.fps += (1 / Math.max(dt, 1e-3) - P.fps) * 0.1;
-        if (this.dev && this.overlay) {
-            DevView.draw(this, now);
-        }
     },
 
     enterLayer(e) {
@@ -1363,18 +1805,19 @@ const Enemies = {
             o = o.parent;
         }
         if (e && !e.dead) {
-            const from = shot.origin || (shot.by || Players.local).eye;
-            const dir = _ev2.copy(hit.point).sub(from).normalize().clone();
-            if (this.blast && this.blast.shot === shot) {
-                let list = this.blast.by.get(e);
-                if (!list) {
-                    this.blast.by.set(e, list = []);
+            if (this.puppets) {
+                if (this.remote) {
+                    this.remote.hit(e, part, hit, shot);
                 }
-                list.push({ part, hit, dir });
                 return;
             }
-            const res = e.takeHit(shot.damage, part, hit, dir, shot);
-            this.hitmark(res);
+            this.hitmark(this.applyHit(e, part, hit, shot));
+            return;
+        }
+        if (this.puppets) {
+            if (this.remote) {
+                this.remote.miss(hit, shot);
+            }
             return;
         }
         if (this.nav) {
@@ -1382,11 +1825,35 @@ const Enemies = {
         }
     },
 
+    applyHit(e, part, hit, shot) {
+        const from = shot.origin || (shot.by || Players.local).eye;
+        const dir = _ev2.copy(hit.point).sub(from).normalize().clone();
+        if (this.blast && this.blast.shot === shot) {
+            let list = this.blast.by.get(e);
+            if (!list) {
+                this.blast.by.set(e, list = []);
+            }
+            list.push({ part, hit, dir });
+            return null;
+        }
+        return e.takeHit(shot.damage, part, hit, dir, shot);
+    },
+
     onShotEnd(shot) {
+        if (this.puppets) {
+            if (this.remote) {
+                this.remote.end(shot);
+            }
+            return;
+        }
+        this.hitmark(this.finishShot(shot));
+    },
+
+    finishShot(shot) {
         const b = this.blast;
         this.blast = null;
         if (!b || b.shot !== shot) {
-            return;
+            return null;
         }
         const rank = { shell: 1, flesh: 2, break: 3, crit: 4, kill: 5 };
         let best = null;
@@ -1399,10 +1866,16 @@ const Enemies = {
                 best = res;
             }
         }
-        this.hitmark(best);
+        return best;
     },
 
     onFire(shot) {
+        if (this.puppets) {
+            if (this.remote) {
+                this.remote.fire(shot);
+            }
+            return;
+        }
         this.blast = shot.dirs.length > 1 ? { shot, by: new Map() } : null;
         if (!this.nav) {
             return;
@@ -1434,6 +1907,12 @@ const Enemies = {
     },
 
     commFx(from, kin, color) {
+        if (this.record && kin.length) {
+            this.out.push([
+                'v', Math.round(from.pos.x * 100) / 100, Math.round(from.pos.y * 100) / 100, Math.round(from.pos.z * 100) / 100,
+                color && color.isColor ? color.getHex() : color, kin.map(k => k.id)
+            ]);
+        }
         for (const k of kin) {
             CommFX.vine(from.pos, k.pos, color);
         }

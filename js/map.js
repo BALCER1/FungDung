@@ -194,13 +194,16 @@ const MapView = {
     open(opts) {
         this.onPick = opts.onPick;
         this.browse = !!opts.browse;
+        this.readOnly = !!opts.readOnly;
         this.choices = this.browse ? [] : RunMap.choices();
         this.hover = null;
         this.drag = null;
         this.reachable = this.findReachable();
         const total = RunMap.layers.length;
         const here = RunMap.current;
-        if (this.browse) {
+        if (opts.info) {
+            this.info.textContent = opts.info;
+        } else if (this.browse) {
             this.info.textContent = `Stage ${here.layer + 1} of ${total} - ${Rooms.get(here.type).name}. Press M to return`;
         } else if (here) {
             const n = this.choices.length;
@@ -324,6 +327,9 @@ const MapView = {
     },
 
     pick(e) {
+        if (this.readOnly) {
+            return null;
+        }
         const p = this.toMap(e);
         return this.choices.find(n => Math.hypot(n.x - p.x, n.y - p.y) < this.R * 1.4) || null;
     },

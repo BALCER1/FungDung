@@ -3,10 +3,13 @@ const Game = {
     room: null,
     def: null,
     optionsBack: 'menu',
+    roomKey: '',
+    present: false,
+    liveStates: { paused: true, options: true, mapview: true, entering: true, map: true },
     el: {},
 
     init() {
-        for (const id of ['mainMenu', 'multiMenu', 'hostMenu', 'joinMenu', 'lobbyMenu', 'profileMenu', 'optionsMenu', 'pauseMenu', 'mapScreen', 'endScreen', 'deadScreen', 'deadInfo', 'quitScreen', 'hud', 'tip', 'mapBackBtn', 'stageLabel', 'warn']) {
+        for (const id of ['mainMenu', 'multiMenu', 'hostMenu', 'joinMenu', 'lobbyMenu', 'profileMenu', 'optionsMenu', 'pauseMenu', 'mapScreen', 'endScreen', 'deadScreen', 'deadInfo', 'quitScreen', 'hud', 'tip', 'mapBackBtn', 'stageLabel', 'warn', 'pauseTitle', 'pauseNote']) {
             this.el[id] = document.getElementById(id);
         }
         Input.init();
@@ -14,6 +17,7 @@ const Game = {
         Profile.init();
         Net.init();
         Lobby.init();
+        Coop.init();
         Arsenal.init();
         Vitals.init();
         Players.init();
@@ -103,6 +107,8 @@ const Game = {
         this.el.mapBackBtn.hidden = s !== 'mapview';
         this.el.hud.hidden = s !== 'playing';
         this.el.warn.hidden = true;
+        this.el.pauseTitle.textContent = Coop.running ? 'Menu' : 'Paused';
+        this.el.pauseNote.hidden = !Coop.running;
     },
 
     openOptions(back) {
@@ -145,12 +151,17 @@ const Game = {
         if (document.pointerLockElement) {
             document.exitPointerLock();
         }
-        this.unloadRoom();
         const here = RunMap.current;
-        MapView.open({
-            onPick: node => this.enterRoom(node),
-            animate: !here || here.type === 'boss'
-        });
+        const animate = !here || here.type === 'boss';
+        if (Coop.running && Net.isGuest) {
+            this.unloadRoom();
+            MapView.open({ readOnly: true, info: Coop.WAIT_TEXT, animate });
+        } else if (Coop.running) {
+            MapView.open({ onPick: node => Coop.hostPick(node), animate });
+        } else {
+            this.unloadRoom();
+            MapView.open({ onPick: node => this.enterRoom(node), animate });
+        }
     },
 
     browseMap() {
@@ -166,6 +177,7 @@ const Game = {
     },
 
     enterRoom(node) {
+        this.unloadRoom();
         RunMap.visit(node);
         this.def = Rooms.get(node.type);
         const b = new RoomBuilder();
@@ -173,21 +185,35 @@ const Game = {
         Rng.use('room/' + key);
         this.def.build(b, node);
         this.room = b;
+        this.roomKey = key;
+        this.present = true;
         Player.reset(b);
         Arsenal.reset();
         Rng.use('spawn/' + key);
         Rng.think('ai/' + key);
-        Enemies.load(b);
+        if (Coop.running && Net.isGuest) {
+            Enemies.loadPuppets(b);
+            Coop.askEnemies();
+        } else {
+            Enemies.load(b);
+        }
         scene.background = new THREE.Color(b.background);
         scene.fog = b.fog;
         this.el.stageLabel.textContent = `Stage ${node.layer + 1} / ${RunMap.layers.length} - ${this.def.name}` +
             (Settings.values.devMode ? ` - seed ${Rng.seed}` : '');
-        this.setState('entering');
-        this.lock();
+        if (document.pointerLockElement === renderer.domElement) {
+            Input.resetLook();
+            this.setState('playing');
+        } else {
+            this.setState('entering');
+            this.lock();
+        }
     },
 
     unloadRoom() {
         Enemies.clear();
+        this.roomKey = '';
+        this.present = false;
         if (this.room) {
             this.room.dispose();
             this.room = null;
@@ -196,16 +222,28 @@ const Game = {
     },
 
     leaveRoom() {
+        if (Coop.running) {
+            Coop.atDoor();
+            return;
+        }
         if (RunMap.current.next.length) {
             this.openMap();
             return;
         }
+        this.finishRun();
+    },
+
+    finishRun() {
+        MapView.close();
         this.setState('complete');
-        document.exitPointerLock();
+        if (document.pointerLockElement) {
+            document.exitPointerLock();
+        }
         this.unloadRoom();
     },
 
     toMenu() {
+        Coop.end();
         if (Net.active) {
             Net.leave();
         }
@@ -235,6 +273,9 @@ const Game = {
             return;
         }
         door.update(dt);
+        if (!this.present) {
+            return;
+        }
         this.el.tip.hidden = door.isOpen || !door.near(Player.pos);
         if (door.passed(Player.pos)) {
             this.leaveRoom();
@@ -246,8 +287,14 @@ const Game = {
         const interval = now - this.last;
         const dt = Math.min(interval / 1000, 0.05);
         this.last = now;
-        if (this.state === 'playing') {
-            Player.update(dt);
+        const coop = Coop.running;
+        if (this.room && (this.state === 'playing' || (coop && this.liveStates[this.state]))) {
+            if (this.state !== 'playing') {
+                Input.keys = {};
+            }
+            if (this.present) {
+                Player.update(dt);
+            }
             Players.update(dt);
             Enemies.update(dt);
             this.updateRoom(dt);
@@ -257,7 +304,10 @@ const Game = {
                 this.die();
             }
         }
-        if (this.room && this.state !== 'mapview') {
+        if (coop) {
+            Coop.frame(interval / 1000);
+        }
+        if (this.room && this.state !== 'mapview' && this.state !== 'map') {
             Arsenal.render();
         }
         Perf.frame(interval, performance.now() - start);

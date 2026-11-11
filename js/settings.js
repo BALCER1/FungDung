@@ -159,6 +159,9 @@ const Settings = {
                 if (relight) {
                     Arsenal.hands.relight();
                 }
+                if (typeof Coop !== 'undefined') {
+                    Coop.rebuildWeapons();
+                }
             }
         }
         const particles = DETAIL.particleLevels[v.particles];

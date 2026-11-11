@@ -159,6 +159,49 @@
     pointer-events: none;
   }
 
+  #party {
+    position: fixed;
+    left: 12px;
+    top: 46px;
+    z-index: 6;
+    padding: 5px 10px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #fff;
+    background: rgba(0, 0, 0, .55);
+    border-radius: 4px;
+    white-space: pre;
+    pointer-events: none;
+  }
+
+  #travelPrompt {
+    position: fixed;
+    left: 50%;
+    top: 84px;
+    z-index: 6;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 14px;
+    font-size: 14px;
+    color: #fff;
+    background: rgba(0, 0, 0, .72);
+    border: 1px solid #e03a3a;
+    border-radius: 6px;
+  }
+
+  #travelPrompt button {
+    padding: 5px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    background: #d42424;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+
   :root {
     --bg: #fff;
     --overlay: rgba(255, 255, 255, .94);
@@ -559,6 +602,12 @@
   <div id="tip" hidden>E: open door</div>
 </div>
 
+<div id="party" hidden></div>
+<div id="travelPrompt" hidden>
+  <span id="travelText"></span>
+  <button id="travelBtn" type="button">Travel now (T)</button>
+</div>
+
 <div id="introScreen" class="screen">
   <h1 id="introTitle" class="logo">FungDung</h1>
 </div>
@@ -828,7 +877,8 @@
 </div>
 
 <div id="pauseMenu" class="screen" hidden>
-  <h1>Paused</h1>
+  <h1 id="pauseTitle">Paused</h1>
+  <p id="pauseNote" hidden>The game keeps running while this menu is open.</p>
   <button id="resumeBtn">Resume</button>
   <button id="pauseOptionsBtn">Settings</button>
   <button id="abandonBtn">Quit to Main Menu</button>
@@ -899,6 +949,7 @@
 <script src="js/map.js"></script>
 <script src="js/net.js"></script>
 <script src="js/lobby.js"></script>
+<script src="js/coop.js"></script>
 <script src="js/game.js"></script>
 </body>
 </html>

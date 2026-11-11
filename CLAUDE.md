@@ -75,6 +75,7 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 | `js/map.js` | `RunMap` (run graph), `MapView` (2D map screen) |
 | `js/net.js` | `Net`: PeerJS connection, host and guest roles, roster, lobby heartbeat, message handlers |
 | `js/lobby.js` | `Lobby`: Multiplayer, Host, Join and Lobby screens, invite links |
+| `js/coop.js` | `Avatar` (remote player blob with gun and hands), `Coop`: player state sync, room travel, party indicator |
 | `js/game.js` | `Game`: states, screens, room lifecycle, main loop |
 
 ## Things that bite
@@ -83,8 +84,14 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
   `clamp01`, `clampN`, `wrapAngle`, and scratch objects `_ev`, `_ev2`, `_sv`, `_sv2`, `_wv`, `_wq`,
   `_hp`, `_hq`, `_hs`, `_hm`, `_bm`, `_bn`, `_bv`, `_ik`, `_qa`, `_qb`, `_qf`, `_eu`. A new file
   that declares one of these with `const` breaks the page.
-- `Game.state` is both "which screen is showing" and "is the simulation running". The sim only
-  ticks in `'playing'`, and losing pointer lock sets `'paused'`.
+- `Game.state` is both "which screen is showing" and "is the simulation running". In singleplayer
+  the sim only ticks in `'playing'`, and losing pointer lock sets `'paused'`. While `Coop.running`
+  it also ticks in `Game.liveStates` (paused, options, mapview, entering, map), with `Input.keys`
+  cleared so an open menu cannot move the player.
+- `Game.present` says whether the local player is physically in the loaded room. A co-op host on
+  the waiting map has a room loaded but is not present. `Game.roomKey` is `'layer:index'`.
+- Headless Chrome cannot take pointer lock, so `enterRoom` ends in `'paused'` there. Tests set
+  `'playing'` by hand.
 - First-person guns render in a second pass: `WeaponView` uses its own 55 degree camera that sees
   only layer 1. A `Weapon` that is never passed to `WeaponView.attach` stays on layer 0 and renders
   as a normal world object.
@@ -92,8 +99,9 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
   Raycasts that should hit batched models must enable that layer (`Arsenal.ray` does).
 - `Arsenal.trace` raycasts `Game.room.group` only. Enemies live inside it. Anything that shots
   should pass through must not be parented there.
-- `WeaponBuilder`, `SporeFX`, `SporeProjectiles` and `Weapon.syncBatch` read the global
-  `DETAIL.guns`. Shellcap geometry reads `DETAIL.enemies`.
+- A `Weapon` takes `opts.lod` (detail level for that one gun) and `opts.remote` (no muzzle lights,
+  never hidden by scope zoom). Without `opts.lod` it follows the global `DETAIL.guns`. Shellcap
+  geometry reads `DETAIL.enemies`.
 - `index.html` forwards the query string and hash to `Proj.html`. Links that must survive without
   JavaScript should point at `Proj.html` directly.
 - `Input.init` blocks the default action of Space except inside form fields. New text inputs work,
@@ -145,6 +153,54 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
   the main menu with a message.
 - Two-player tests: two separate headless Chrome instances with their own profiles connect over
   real PeerJS while `*.supabase.co` is mocked.
+
+## Co-op run flow
+
+- `Coop.begin()` runs when the host presses Start and when a guest receives `start`. `Coop.end()`
+  runs from `Game.toMenu` and when the connection closes. While `Coop.running`, the local player
+  record uses `Net.id` as its id, and remote players are added to `Players.list`.
+- Only the host picks rooms. `Coop.hostPick(node)` builds the room, then broadcasts `room`. Guests
+  on the waiting map enter at once. Guests still in the old room get a prompt and are moved after
+  `CONFIG.travelCountdown` seconds, or as soon as they are back in `'playing'`.
+- Passing the door calls `Coop.atDoor()`. A guest unloads its room and waits on a read-only map.
+  The host keeps the old room loaded and simulated until it picks the next one.
+- Every player sends its state `CONFIG.netRate` times a second: guests send `st` to the host, the
+  host broadcasts `ps` with everyone. The array layout is in `Coop.mine` and `Coop.apply`. The
+  state includes the room key, which is how `inRoom` is decided on every client.
+- Remote weapons mirror the sender's weapon `state`, `altHeld` and `ammo`, and replay `fire` events
+  (the options that were passed to `Weapon.fire`). They are built with no `onShot`, so they never
+  deal damage.
+- Avatars live in `Coop.group`, outside `Game.room.group`, so shots pass through teammates.
+- Guests build rooms with `Enemies.loadPuppets` instead of `Enemies.load`.
+
+## Enemies in co-op
+
+- The host runs all enemy AI. Guests hold "puppets": real enemy objects (same model, same part
+  ids, so local hit detection works) with no mind. `Enemies.puppets` is true on guests.
+- A guest entering a room sends `enq`. The host answers `en` with every live enemy (id, type,
+  position, plate state, current action). Until that arrives the guest ignores `es`.
+- Each net tick the host sends `es` to every guest in its room: `s` is a flat array of 15 integers
+  per enemy (layout in `Enemy.packNet` / `applyNet`), `e` is a list of events.
+- Events are arrays starting with a code: `h` hit, `k` kick, `d` death, `a` action, `p` plates,
+  `v` comm vines. The host records them with `Enemies.emit` (only while `Enemies.record`).
+- Actions: the host sends the whole action object when it is created or when a non-volatile field
+  changes (`Enemies.VOLATILE` lists fields the puppet works out itself). Vector3 values survive the
+  trip. The puppet advances `action.t` locally and is corrected from the snapshot.
+- Puppet animation runs the normal `animate` code from replicated state. A mantle is replayed by
+  the puppet's own `updateMantle` from the action data. Deaths, plate breaks, dust and debris are
+  played locally on each client, so their random details differ between players.
+- A new enemy type must provide: `packNet`/`applyNet` if it needs extra fields, `packState`/
+  `applyState` for slow-changing state, `showHit`, `partById`, and `puppetUpdate` if it has
+  special movement. Anything cosmetic that the host triggers must be an event or be derivable.
+- Guest shots: the guest finds its own hits and sends one `sh` per shot (weapon, mode, damage,
+  pellet count, origin, list of enemy id + part id + point). The host clamps damage and pellet
+  count to the weapon's stats, rebuilds the shot and runs it through the normal hit path
+  (`Enemies.remoteShot`), then replies `hm` with the hit marker kind.
+- Enemy hits on a guest: `Players.hurt` on the host calls `Players.onRemoteHurt`, which sends
+  `hurt`. The guest applies it with `Players.applyLocal`.
+- Scaling: `Enemies.partySize` is set by `Coop.hostPick` and read once in `Enemies.load`. It sets
+  `Enemies.countScale`, `Enemies.healthScale` and `Players.damageScale` for that room, from
+  `CONFIG.coopEnemyCount`, `CONFIG.coopEnemyHealth` and `CONFIG.coopEnemyDamage`.
 
 ## Seeded randomness
 

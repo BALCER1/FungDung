@@ -1,4 +1,5 @@
 const SHELLCAP_MOODS = ['wary', 'hunting', 'angry', 'bloodlust'];
+const SHELLCAP_HITS = ['shell', 'flesh', 'crit', 'break'];
 const HEAD_MULT = 2.0
 const LIMB_MULT = 0.6
 const SHELL_VS = {
@@ -611,6 +612,7 @@ class Shellcap extends Enemy {
             fx.burst(hit.point, mult > 1.2 ? 12 : 5, this.moodColor(), 2.6, 0.55, { grav: 2 });
             zone = hit.point.y - this.pos.y > 1.3 ? 'high' : 'low';
         }
+        this.netHit(part, hit.point, dir, kind, pl);
         dmg *= 1 - this.dr;
         this.hp -= dmg;
         if (!pl || !pl.broken || kind === 'break') {
@@ -678,6 +680,7 @@ class Shellcap extends Enemy {
                 fx.burst(h.hit.point, 3, this.moodColor(), 2.6, 0.5, { grav: 2 });
                 zone = h.hit.point.y - this.pos.y > 1.3 ? 'high' : 'low';
             }
+            this.netHit(h.part, h.hit.point, dir, k, pl);
             if (rank[k] > rank[kind]) {
                 kind = k;
             }
@@ -697,7 +700,99 @@ class Shellcap extends Enemy {
         return kind;
     }
 
+    netHit(part, point, dir, kind, pl) {
+        if (!Enemies.record) {
+            return;
+        }
+        const r = v => Math.round(v * 100) / 100;
+        Enemies.out.push([
+            'h', this.id, part && part.id !== undefined ? part.id : -1, r(point.x), r(point.y), r(point.z), r(dir.x), r(dir.z),
+            Math.max(0, SHELLCAP_HITS.indexOf(kind)), pl ? (pl.broken ? -1 : Math.round(100 * pl.hp / pl.max)) : -1
+        ]);
+    }
+
+    showHit(partId, point, dir, kind, hpPct) {
+        const fx = Enemies.fx;
+        const found = this.partById(partId);
+        const pl = found && found.part ? found.part.plate : null;
+        if (pl && !pl.broken && (kind === 0 || kind === 3)) {
+            fx.burst(point, 5, ShellcapKit.chip, 3, 0.35, { grav: 9, drag: 1 });
+            if (kind === 3) {
+                this.breakPlate(pl, dir);
+            } else {
+                if (hpPct >= 0) {
+                    pl.hp = pl.max * hpPct / 100;
+                }
+                this.crackLook(pl);
+            }
+        } else {
+            fx.burst(point, kind === 2 ? 12 : 5, this.moodColor(), 2.6, 0.55, { grav: 2 });
+        }
+        if (found && found.mesh) {
+            this.flashMesh(found.mesh);
+        }
+    }
+
+    packState() {
+        return this.plates.map(pl => (pl.broken ? -1 : Math.max(0, Math.round(100 * pl.hp / pl.max))));
+    }
+
+    applyState(arr) {
+        for (let i = 0; i < this.plates.length && i < arr.length; i++) {
+            const pl = this.plates[i];
+            const v = arr[i];
+            if (v < 0) {
+                if (!pl.broken) {
+                    this.dropPlate(pl);
+                }
+                continue;
+            }
+            if (pl.broken) {
+                pl.broken = false;
+                pl.regrowing = true;
+                pl.make();
+            }
+            pl.hp = pl.max * v / 100;
+            if (pl.regrowing) {
+                pl.mesh.scale.setScalar(v >= 100 ? 1 : 0.15 + 0.85 * v / 100);
+                pl.regrowing = v < 100;
+            }
+            this.crackLook(pl);
+        }
+    }
+
+    dropPlate(pl) {
+        pl.broken = true;
+        pl.regrowing = false;
+        pl.hp = 0;
+        const m = pl.mesh;
+        const i = this.flashList.indexOf(m);
+        if (i >= 0) {
+            this.flashList.splice(i, 1);
+        }
+        m.traverse(c => {
+            const k = this.glowMeshes.indexOf(c);
+            if (k >= 0) {
+                this.glowMeshes.splice(k, 1);
+            }
+        });
+        if (m.parent) {
+            m.parent.remove(m);
+        }
+    }
+
+    scaleHealth(k) {
+        super.scaleHealth(k);
+        for (const pl of this.plates) {
+            pl.max = Math.round(pl.max * k);
+            pl.hp = pl.max;
+        }
+    }
+
     kick(k, dir) {
+        if (!this.dead) {
+            Enemies.emit(['k', this.id, Math.round(k * 100) / 100, Math.round(dir.x * 100) / 100, Math.round(dir.z * 100) / 100]);
+        }
         this.recoilV += k * 7;
         const side = dir.x * Math.cos(this.yaw) - dir.z * Math.sin(this.yaw);
         this.recoilRollV += side * k * 6;
@@ -803,7 +898,13 @@ class Shellcap extends Enemy {
 
     die(dir) {
         const M = ShellcapKit.mat;
-        this.mind.died(this, Enemies.time);
+        Enemies.emit([
+            'd', this.id, Math.round(dir.x * 100) / 100, Math.round(dir.y * 100) / 100, Math.round(dir.z * 100) / 100,
+            this.lastHeavy ? 1 : 0
+        ]);
+        if (this.mind) {
+            this.mind.died(this, Enemies.time);
+        }
         for (const m of this.flashList) {
             m.material = m.userData.base;
         }
@@ -1193,6 +1294,35 @@ class Shellcap extends Enemy {
         } else {
             super.update(dt, now);
         }
+        this.settle(dt);
+    }
+
+    puppetUpdate(dt, now) {
+        const a = this.action;
+        if (a && a.name === 'mantle') {
+            this.updateMantle(dt, now);
+        } else {
+            super.puppetUpdate(dt, now);
+            if (a && a.beats) {
+                for (let i = 0; i < a.beats.length; i++) {
+                    if (!a.done[i] && a.t >= a.beats[i]) {
+                        a.done[i] = true;
+                        this.beat = 1;
+                        _sv.set(this.pos.x, this.pos.y + this.height * 0.85, this.pos.z);
+                        Enemies.fx.burst(_sv, 18, this.moodColor(), 2.5, 0.8, { up: 1.2, drag: 1.5 });
+                    }
+                }
+            } else if (a && a.name === 'ack' && a.pulse && a.t >= a.pulse) {
+                a.pulse = 0;
+                this.beat = 0.8;
+                _sv.set(this.pos.x, this.pos.y + this.height * 0.85, this.pos.z);
+                CommFX.ring(_sv, this.moodColor(), 1.4, 0.6);
+            }
+        }
+        this.settle(dt);
+    }
+
+    settle(dt) {
         if (this.flashT > 0) {
             this.flashT -= dt;
             if (this.flashT <= 0) {

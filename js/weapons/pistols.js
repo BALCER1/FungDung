@@ -261,7 +261,7 @@
                 });
                 lights.forEach(l => l.parent.remove(l));
                 const disc = new THREE.Mesh(
-                    new THREE.RingGeometry(0.03, 0.16, DETAIL.seg(DETAIL.guns, 40, 8)),
+                    new THREE.RingGeometry(0.03, 0.16, DETAIL.seg(w.lod || DETAIL.guns, 40, 8)),
                     new THREE.MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false })
                 );
                 disc.rotation.y = Math.PI / 2;

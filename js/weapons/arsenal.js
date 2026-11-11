@@ -8,6 +8,7 @@ const Arsenal = {
     onHit: null,
     onFire: null,
     onShotEnd: null,
+    onLocalShot: null,
     firing: false,
 
     init() {
@@ -187,6 +188,9 @@ const Arsenal = {
 
     shoot(shot) {
         shot.by = Players.local;
+        if (this.onLocalShot && shot.dirs.length) {
+            this.onLocalShot(shot);
+        }
         if (this.onFire && shot.dirs.length) {
             this.onFire(shot);
         }

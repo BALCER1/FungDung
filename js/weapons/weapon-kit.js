@@ -92,11 +92,12 @@ class Spring {
 }
 
 class WeaponBuilder {
-    constructor() {
+    constructor(lod) {
         this.mats = {};
         this.parts = [];
         this.grips = {};
-        this.lod = DETAIL.guns;
+        this.lod = lod || DETAIL.guns;
+        this.noLights = false;
     }
 
     n(count, min = 3) {
@@ -364,7 +365,7 @@ class WeaponBuilder {
         const spike = this.mesh(geo, mat, g);
         core.visible = spike.visible = false;
         const light = new THREE.PointLight(color, 0, 2.5, 2);
-        if (DETAIL.lighting === 'high') {
+        if (DETAIL.lighting === 'high' && !this.noLights) {
             g.add(light);
         }
         return { group: g, core, spike, light, size, intensity, age: 9 };
@@ -372,14 +373,15 @@ class WeaponBuilder {
 }
 
 class SporeFX {
-    constructor(local, worldParent) {
+    constructor(local, worldParent, lod) {
+        this.lod = lod || DETAIL.guns;
         this.local = local;
         this.worldParent = worldParent || null;
         this.live = [];
         this.pools = { dot: [], ring: [] };
         this.geos = {
-            dot: new THREE.IcosahedronGeometry(1, DETAIL.guns === 'high' ? 1 : 0),
-            ring: new THREE.TorusGeometry(1, 0.07, DETAIL.seg(DETAIL.guns, 6), DETAIL.seg(DETAIL.guns, 32, 6))
+            dot: new THREE.IcosahedronGeometry(1, this.lod === 'high' ? 1 : 0),
+            ring: new THREE.TorusGeometry(1, 0.07, DETAIL.seg(this.lod, 6), DETAIL.seg(this.lod, 32, 6))
         };
         this.max = 500;
         this.layer = 0;
@@ -527,7 +529,7 @@ class SporeProjectiles {
         this.texCache = {};
         this.max = 64;
         this.geo = SporeProjectiles.quad();
-        this.body = new THREE.CylinderGeometry(1, 1, 1, DETAIL.seg(DETAIL.guns, 10, 4), 1).rotateX(Math.PI / 2);
+        this.body = new THREE.CylinderGeometry(1, 1, 1, DETAIL.seg(fx.lod, 10, 4), 1).rotateX(Math.PI / 2);
         this._a = new THREE.Vector3();
         this._p = new THREE.Vector3();
         this._z = new THREE.Vector3(0, 0, 1);
@@ -814,7 +816,10 @@ class Weapon {
             kick: { back: 0.04, up: 0.06, roll: 0.01 }
         }, def.stats);
 
-        this.b = new WeaponBuilder();
+        this.lod = opts.lod || null;
+        this.remote = !!opts.remote;
+        this.b = new WeaponBuilder(this.lod);
+        this.b.noLights = this.remote;
         this.root = new THREE.Group();
         this.root.name = 'weapon:' + id;
         this.root.position.fromArray(def.offset || [0.2, -0.2, -0.42]);
@@ -830,7 +835,7 @@ class Weapon {
         for (const o of this.parts.rigExtras || []) {
             this.rig.add(o);
         }
-        this.fx = new SporeFX(this.rig, opts.worldParent);
+        this.fx = new SporeFX(this.rig, opts.worldParent, this.lod);
         this.projectiles = new SporeProjectiles(this.fx);
         this.onShot = opts.onShot || null;
         this.trace = opts.trace || null;
@@ -1018,6 +1023,7 @@ class Weapon {
             this.def.onFire(this, side, o);
         }
         const shot = this.makeShot(side, o);
+        shot.fire = o;
         if (this.trace) {
             shot.hits = shot.dirs.map(d => this.trace(shot.origin, d, shot.range));
         }
@@ -1114,7 +1120,7 @@ class Weapon {
         }
 
         this.pose(dt, move);
-        this.root.visible = this.zoom < 0.97;
+        this.root.visible = this.remote || this.zoom < 0.97;
         this.root.updateWorldMatrix(true, true);
         if (this.def.effects) {
             this.def.effects(this, dt);
@@ -1130,7 +1136,7 @@ class Weapon {
     }
 
     syncBatch() {
-        const want = DETAIL.guns !== 'high' && Batch.supported();
+        const want = (this.lod || DETAIL.guns) !== 'high' && Batch.supported();
         if (want && !this.batch) {
             this.batch = new MeshBatch(this.root, { skip: o => o.name === 'hands' });
         } else if (!want && this.batch) {

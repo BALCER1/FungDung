@@ -41,9 +41,15 @@ const Lobby = {
             }
         });
 
-        Net.onRoster = () => this.showLobby();
+        Net.onRoster = () => {
+            this.showLobby();
+            Coop.syncRoster();
+        };
         Net.onClosed = text => this.kicked(text);
-        Net.on('start', msg => Game.startRun(msg.seed));
+        Net.on('start', msg => {
+            Coop.begin();
+            Game.startRun(msg.seed);
+        });
         DB.watch(() => this.showMulti());
 
         const wanted = new URLSearchParams(location.search).get('lobby');
@@ -337,7 +343,9 @@ const Lobby = {
         if (!Net.isHost) {
             return;
         }
-        Game.startRun(Net.start());
+        const seed = Net.start();
+        Coop.begin();
+        Game.startRun(seed);
     },
 
     leave() {
@@ -348,6 +356,10 @@ const Lobby = {
     kicked(text) {
         if (document.pointerLockElement) {
             document.exitPointerLock();
+        }
+        Coop.end();
+        if (Game.state === 'complete' || Game.state === 'dead') {
+            return;
         }
         Game.toMenu();
         this.el.menuNotice.textContent = text;
