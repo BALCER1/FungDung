@@ -76,6 +76,7 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 | `js/net.js` | `Net`: PeerJS connection, host and guest roles, roster, lobby heartbeat, message handlers |
 | `js/lobby.js` | `Lobby`: Multiplayer, Host, Join and Lobby screens, invite links |
 | `js/coop.js` | `Avatar` (remote player blob with gun and hands), `Coop`: player state sync, room travel, party indicator |
+| `js/life.js` | `Life`: downed, bleed-out, spectator camera, hold-E revive, shop vending machine respawn |
 | `js/game.js` | `Game`: states, screens, room lifecycle, main loop |
 
 ## Things that bite
@@ -187,6 +188,27 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
   deal damage.
 - Avatars live in `Coop.group`, outside `Game.room.group`, so shots pass through teammates.
 - Guests build rooms with `Enemies.loadPuppets` instead of `Enemies.load`.
+
+## Downed, spectating and respawn
+
+- Player records have `down` and `dead`. Alive: both false. Downed: `down`. Spectating: `down` and
+  `dead`. Anything that skips `down` (`Players.active`, `Players.hurt`, enemy targeting) skips
+  spectators too. The local player's flags are owned by `Life`; remote flags come from state bits
+  64 (down) and 128 (dead).
+- Reaching 0 HP calls `Life.goDown`. The host (or singleplayer) loses the run when every player in
+  `Players.list` is `down`, then broadcasts `lost`. Singleplayer therefore still dies at once.
+- Downed: no movement or weapons, camera at `CONFIG.downed.eye`, bleeds out after
+  `CONFIG.downed.bleedout` seconds. A downed player moved on with the party becomes a spectator.
+- Revive: hold E near a downed teammate for `CONFIG.downed.reviveTime`. The state array carries the
+  reviver's target id and progress (fields 15 and 16). Guests send `rv`; the host checks it in
+  `Life.grantRevive` and sends `up` to the target.
+- Spectators keep `Game.present` true (so they get enemy snapshots) but never move. The camera sits
+  in the watched player's `Avatar` head (body, eyes and label hidden), using the spectator's own
+  FOV and graphics settings. Click to switch. Dead guests travel with the party at once. A dead host
+  gets the room-pick map when a living teammate leaves through the door (`Coop.leftRoom`).
+- Respawn: the shop has `RoomKit.vending` (`room.vending`). E near it sends `vend` to the host;
+  `Life.vend` respawns every dead player in the room (`respawn` message), uses up a charge
+  (`CONFIG.vending.uses`, 0 = unlimited) and broadcasts `vended`.
 
 ## Enemies in co-op
 

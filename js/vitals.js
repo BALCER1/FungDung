@@ -55,6 +55,13 @@ const Vitals = {
         }
     },
 
+    revive(hp) {
+        this.hp = Math.max(1, Math.min(this.max, Math.round(hp)));
+        this.dead = false;
+        this.flash = 0;
+        this.draw();
+    },
+
     heal(n) {
         this.hp = Math.min(this.max, this.hp + n);
         this.draw();
@@ -77,7 +84,8 @@ const Vitals = {
 
     update(dt) {
         this.flash = Math.max(0, this.flash - dt * 1.6);
-        const low = this.hp / this.max < 0.3 ? 0.25 + 0.1 * Math.sin(performance.now() / 160) : 0;
+        const spectating = typeof Players !== 'undefined' && Players.local && Players.local.dead;
+        const low = this.hp / this.max < 0.3 && !spectating ?0.25 + 0.1 * Math.sin(performance.now() / 160) : 0;
         this.el.vig.style.opacity = Math.max(this.flash, low).toFixed(3);
         for (let i = this.marks.length - 1; i >= 0; i--) {
             const m = this.marks[i];

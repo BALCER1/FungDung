@@ -165,6 +165,46 @@ const RoomKit = {
             b.box(x, 0, z, tw, 0.4 * (i + 1), td, color);
         }
     },
+    // A respawn vending machine. yaw turns its front (local +z) to face into the room.
+    // Puts b.vending = { front, spot, left, show() }; no world randomness is used.
+    vending(b, x, z, yaw, color = 0xc0392b) {
+        const W = 1.1;
+        const H = 2.1;
+        const D = 0.85;
+        const g = new THREE.Group();
+        g.position.set(x, 0, z);
+        g.rotation.y = yaw;
+        b.group.add(g);
+        const part = (w, h, d, px, py, pz, mat) => {
+            const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+            m.position.set(px, py, pz);
+            g.add(m);
+            return m;
+        };
+        const front = D / 2;
+        part(W, H, D, 0, H / 2, 0, b.mat(color));
+        part(W + 0.08, 0.12, D + 0.08, 0, H, 0, b.mat(this.shade(color, 0.6)));
+        part(W * 0.78, H * 0.5, 0.04, 0, 1.2, front + 0.02, new THREE.MeshLambertMaterial({ color: 0x9ad4e8, emissive: 0x1d3a44 }));
+        part(0.42, 0.12, 0.03, 0, 1.2, front + 0.05, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+        part(0.12, 0.42, 0.03, 0, 1.2, front + 0.05, new THREE.MeshBasicMaterial({ color: 0xffffff }));
+        part(0.5, 0.14, 0.05, 0, 0.45, front + 0.02, b.mat(0x15171c));
+        const light = part(0.5, 0.1, 0.04, 0, 1.92, front + 0.02, new THREE.MeshBasicMaterial({ color: 0x4cff7a }));
+
+        const turned = Math.abs(Math.sin(yaw)) > 0.5;
+        b.solid(x, 0, z, turned ? D : W, H, turned ? W : D);
+        const nx = Math.sin(yaw);
+        const nz = Math.cos(yaw);
+        const uses = CONFIG.vending.uses;
+        b.vending = {
+            front: new THREE.Vector3(x + nx * (front + 0.6), 0, z + nz * (front + 0.6)),
+            spot: { x: x + nx * (front + 1.2), z: z + nz * (front + 1.2), yaw: Math.atan2(-nx, -nz) },
+            left: uses > 0 ? uses : -1,
+            show() {
+                light.material.color.setHex(this.left === 0 ? 0x3a3d44 : 0x4cff7a);
+            }
+        };
+        return b.vending;
+    },
     crates(b, x, z, w, d, color) {
         const n = 2 + Math.floor(Rng.w() * 4);
         for (let i = 0; i < n; i++) {

@@ -23,6 +23,7 @@ const Game = {
         Players.init();
         Enemies.init();
         MapView.init();
+        Life.init();
 
         const on = (id, fn) => document.getElementById(id).addEventListener('click', fn);
         on('singleBtn', () => this.startRun());
@@ -51,7 +52,8 @@ const Game = {
                     this.closeBrowse();
                 }
             }
-            if (e.code === 'KeyE' && this.state === 'playing' && this.room.door && this.room.door.near(Player.pos)) {
+            if (e.code === 'KeyE' && this.state === 'playing' && this.room.door && this.room.door.near(Player.pos) &&
+                !Players.local.down && !Life.claimsE()) {
                 this.room.door.open();
             }
         });
@@ -137,6 +139,7 @@ const Game = {
     startRun(seed) {
         this.unloadRoom();
         Vitals.reset();
+        Life.reset();
         if (seed === undefined && Settings.values.devMode) {
             seed = Rng.parse(document.getElementById('setSeed').value);
         }
@@ -188,6 +191,7 @@ const Game = {
         this.roomKey = key;
         this.present = true;
         Player.reset(b);
+        Life.enteredRoom();
         Arsenal.reset();
         Rng.use('spawn/' + key);
         Rng.think('ai/' + key);
@@ -253,7 +257,8 @@ const Game = {
 
     die() {
         const node = RunMap.current;
-        this.el.deadInfo.textContent = node ? `Consumed on stage ${node.layer + 1} of ${RunMap.layers.length}.` : '';
+        const who = Coop.running ? 'The party was consumed' : 'Consumed';
+        this.el.deadInfo.textContent = node ? `${who} on stage ${node.layer + 1} of ${RunMap.layers.length}.` : '';
         this.setState('dead');
         document.exitPointerLock();
         this.unloadRoom();
@@ -273,10 +278,11 @@ const Game = {
             return;
         }
         door.update(dt);
-        if (!this.present) {
+        if (!this.present || Players.local.down) {
+            this.el.tip.hidden = true;
             return;
         }
-        this.el.tip.hidden = door.isOpen || !door.near(Player.pos);
+        this.el.tip.hidden = door.isOpen || !door.near(Player.pos) || Life.claimsE();
         if (door.passed(Player.pos)) {
             this.leaveRoom();
         }
@@ -292,7 +298,10 @@ const Game = {
             if (this.state !== 'playing') {
                 Input.keys = {};
             }
-            if (this.present) {
+            if (this.present && !Players.local.dead) {
+                if (Players.local.down) {
+                    Input.keys = {};
+                }
                 Player.update(dt);
             }
             Players.update(dt);
@@ -300,14 +309,13 @@ const Game = {
             this.updateRoom(dt);
             Arsenal.update(dt);
             Vitals.update(dt);
-            if (Vitals.dead) {
-                this.die();
-            }
+            Life.update(dt);
         }
         if (coop) {
             Coop.frame(interval / 1000);
         }
         if (this.room && this.state !== 'mapview' && this.state !== 'map') {
+            Life.view(dt);
             Arsenal.render();
         }
         Perf.frame(interval, performance.now() - start);

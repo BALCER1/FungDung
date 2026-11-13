@@ -23,6 +23,9 @@ const Players = {
             sprinting: false,
             inRoom: true,
             down: false,
+            dead: false,
+            rv: '',
+            rvT: 0,
             nav: { floor: 0, top: false, cells: [0, 0] },
             step: { t: 0, ground: true, vy: 0 }
         };

@@ -14,5 +14,6 @@ Rooms.register('shop', {
         RoomKit.pillar(b, -W / 2, L / 2 - 1, 1, H, pal.pillar);
         RoomKit.pillar(b, W / 2, L / 2 - 1, 1, H, pal.pillar);
         RoomKit.crates(b, -W + 3, -L + 3, 3, 2.5, pal.crate);
+        RoomKit.vending(b, W - 0.5, L - 4.5, -Math.PI / 2);
     }
 });

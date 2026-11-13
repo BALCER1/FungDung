@@ -1389,7 +1389,7 @@ const Enemies = {
     },
 
     pushLocal() {
-        if (!Players.local.inRoom) {
+        if (!Players.local.inRoom || Players.local.down) {
             return;
         }
         for (const a of this.list) {

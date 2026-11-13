@@ -12,7 +12,7 @@ const CONFIG = {
     sensitivity: 0.002,
     stages: 12,
     version: '1.0',
-    netVersion: 5,
+    netVersion: 6,
     coopEnemyCount: 0.3,
     coopEnemyDamage: 0.3,
     coopEnemyHealth: 0,
@@ -20,6 +20,18 @@ const CONFIG = {
     travelCountdown: 15,
     remoteGunDetail: 'medium',
     maxPlayers: 4,
+    downed: {
+        bleedout: 30,
+        reviveTime: 10,
+        reviveRange: 2,
+        reviveHp: 0.3,
+        eye: 0.45
+    },
+    vending: {
+        uses: 1,
+        hp: 1,
+        range: 2
+    },
     lobby: {
         heartbeat: 15,
         refresh: 4,

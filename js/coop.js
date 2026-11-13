@@ -6,10 +6,13 @@ class Avatar {
         this.weapon = null;
         this.wstate = null;
         this.hands = new Hands();
+        this.base = new THREE.Vector3();
+        this.tip = 0;
 
         this.group = new THREE.Group();
         this.group.name = 'player:' + player.id;
         this.group.visible = false;
+        this.group.rotation.order = 'YXZ';
 
         const r = CONFIG.radius;
         const h = CONFIG.height;
@@ -28,10 +31,12 @@ class Avatar {
 
         this.eyeMat = new THREE.MeshBasicMaterial({ color: 0x15171c });
         this.eyeGeo = new THREE.SphereGeometry(0.045, 10, 8);
+        this.eyes = [];
         for (const x of [-0.1, 0.1]) {
             const eye = new THREE.Mesh(this.eyeGeo, this.eyeMat);
             eye.position.set(x, CONFIG.eye - 0.1, -r + 0.035);
             this.group.add(eye);
+            this.eyes.push(eye);
         }
 
         this.head = new THREE.Group();
@@ -119,18 +124,37 @@ class Avatar {
     update(dt) {
         const p = this.player;
         const g = this.group;
-        if (!g.visible || g.position.distanceToSquared(p.pos) > 16) {
-            g.position.copy(p.pos);
+        const down = p.down ? 1 : 0;
+        if (!g.visible || this.base.distanceToSquared(p.pos) > 16) {
+            this.base.copy(p.pos);
             this.yaw = p.yaw;
             this.pitch = p.pitch;
+            this.tip = down;
         }
         g.visible = true;
         const k = 1 - Math.exp(-14 * dt);
-        g.position.lerp(p.pos, k);
+        this.base.lerp(p.pos, k);
         this.yaw += wrapAngle(p.yaw - this.yaw) * k;
         this.pitch += (p.pitch - this.pitch) * k;
-        g.rotation.y = this.yaw;
         this.head.rotation.x = this.pitch;
+
+        // Downed: fall over backwards. The name tag is counter-rotated so it stays above the body.
+        this.tip += (down - this.tip) * (1 - Math.exp(-6 * dt));
+        const a = this.tip * Math.PI / 2;
+        g.position.copy(this.base);
+        g.position.y += CONFIG.radius * this.tip;
+        g.rotation.set(a, this.yaw, 0);
+        const lh = CONFIG.height + 0.4;
+        this.label.position.set(0, lh * Math.cos(a), -lh * Math.sin(a));
+        this.head.visible = !p.down;
+
+        // Spectated: the camera sits in this head, so only the gun and hands are drawn.
+        const fp = Life.isWatching(p);
+        this.body.visible = !fp;
+        this.label.visible = !fp;
+        for (const eye of this.eyes) {
+            eye.visible = !fp;
+        }
 
         if (!this.weapon || this.weapon.id !== p.weapon) {
             this.setWeapon(p.weapon);
@@ -199,6 +223,9 @@ const Coop = {
     deadline: 0,
     partyText: '',
     el: {},
+    leftRoom: false,
+    // Player state array: 17 fields, then the event list (see mine/apply).
+    FIELDS: 17,
     WAIT_TEXT: 'Waiting for host to choose the next room...',
     COLORS: [0xff6b6b, 0x4dabf7, 0xffd43b, 0x69db7c],
     uiStates: { playing: true, paused: true, options: true, mapview: true, map: true, entering: true },
@@ -278,6 +305,7 @@ const Coop = {
         this.partyNode = null;
         this.partyKey = '';
         this.deadline = 0;
+        this.leftRoom = false;
         this.events = [];
         this.latest.clear();
         this.relay.clear();
@@ -292,6 +320,7 @@ const Coop = {
         Players.damageScale = 1;
         Enemies.record = false;
         Enemies.partySize = 1;
+        Life.reset();
         this.showUi();
     },
 
@@ -353,18 +382,18 @@ const Coop = {
         const r2 = v => Math.round(v * 100) / 100;
         const r3 = v => Math.round(v * 1000) / 1000;
         const flags = (Player.onGround ? 1 : 0) | (L.sprinting ? 2 : 0) | (w.reloading ? 4 : 0) | (w.altHeld ? 8 : 0) |
-            (w.zoom > 0.5 ? 16 : 0) | (L.inRoom && door && door.isOpen ? 32 : 0);
+            (w.zoom > 0.5 ? 16 : 0) | (L.inRoom && door && door.isOpen ? 32 : 0) | (L.down ? 64 : 0) | (L.dead ? 128 : 0);
         const out = [
             Net.id, r2(Player.pos.x), r2(Player.pos.y), r2(Player.pos.z), r2(Player.vel.x), r2(Player.vel.y), r2(Player.vel.z),
             r3(Player.yaw), r3(Player.pitch), w.id, w.state, w.ammo, flags, Math.round(Vitals.hp / Vitals.max * 100),
-            L.inRoom ? Game.roomKey : '', this.events
+            L.inRoom ? Game.roomKey : '', L.rv, Math.round(L.rvT * 100), this.events
         ];
         this.events = [];
         return out;
     },
 
     apply(a) {
-        const p = Array.isArray(a) && a.length >= 15 ? Players.get(a[0]) : null;
+        const p = Array.isArray(a) && a.length >= this.FIELDS ? Players.get(a[0]) : null;
         if (!p || p.local) {
             return;
         }
@@ -382,13 +411,17 @@ const Coop = {
         p.alt = !!(f & 8);
         p.zoom = f & 16 ? 1 : 0;
         p.door = !!(f & 32);
+        p.down = !!(f & 64);
+        p.dead = !!(f & 128);
         p.hpF = Math.max(0, Math.min(1, (+a[13] || 0) / 100));
         p.room = String(a[14] || '');
-        p.eye.set(p.pos.x, p.pos.y + CONFIG.eye, p.pos.z);
+        p.rv = String(a[15] || '');
+        p.rvT = Math.max(0, Math.min(1, (+a[16] || 0) / 100));
+        p.eye.set(p.pos.x, p.pos.y + (p.down ? CONFIG.downed.eye : CONFIG.eye), p.pos.z);
         const cp = Math.cos(p.pitch);
         p.aim.set(-Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp);
-        if (Array.isArray(a[15])) {
-            for (const ev of a[15]) {
+        if (Array.isArray(a[this.FIELDS])) {
+            for (const ev of a[this.FIELDS]) {
                 if (Array.isArray(ev) && p.events.length < 64) {
                     p.events.push(ev);
                 }
@@ -397,18 +430,23 @@ const Coop = {
     },
 
     fromGuest(msg, from) {
-        if (!this.running || !Net.isHost || !Array.isArray(msg.s) || msg.s.length < 15) {
+        if (!this.running || !Net.isHost || !Array.isArray(msg.s) || msg.s.length < this.FIELDS) {
             return;
         }
         const s = msg.s;
         s[0] = from;
+        const p = Players.get(from);
+        const was = p ? p.room : '';
         this.apply(s);
+        if (p && was && was === Game.roomKey && !p.room && !p.down) {
+            this.leftRoom = true;
+        }
         let queue = this.relay.get(from);
         if (!queue) {
             this.relay.set(from, queue = []);
         }
-        if (Array.isArray(s[15])) {
-            for (const ev of s[15]) {
+        if (Array.isArray(s[this.FIELDS])) {
+            for (const ev of s[this.FIELDS]) {
                 if (queue.length < 64) {
                     queue.push(ev);
                 }
@@ -434,7 +472,7 @@ const Coop = {
         }
         const list = [me];
         for (const [id, s] of this.latest) {
-            const copy = s.slice(0, 15);
+            const copy = s.slice(0, this.FIELDS);
             const queue = this.relay.get(id) || [];
             copy.push(queue.slice());
             queue.length = 0;
@@ -584,6 +622,13 @@ const Coop = {
         if (door && !door.isOpen && Players.list.some(p => !p.local && p.inRoom && p.door)) {
             door.open();
         }
+        // A spectating host cannot walk through the door, so it gets the room-pick map as soon
+        // as a living teammate leaves through it.
+        if (Net.isHost && L.dead && this.leftRoom && Game.present && Game.room) {
+            this.leftRoom = false;
+            Game.present = false;
+            Game.openMap();
+        }
         this.updateAvatars(dt);
         this.updatePrompt();
         this.showUi();
@@ -599,7 +644,7 @@ const Coop = {
                 continue;
             }
             let av = this.avatars.get(p.id);
-            if (!p.inRoom || !drawn) {
+            if (!p.inRoom || !drawn || p.dead) {
                 if (av) {
                     av.group.visible = false;
                 }
@@ -632,6 +677,7 @@ const Coop = {
 
     hostPick(node) {
         Enemies.partySize = Math.max(1, Net.roster.length);
+        this.leftRoom = false;
         Game.enterRoom(node);
         this.partyNode = node;
         this.partyKey = this.keyOf(node);
@@ -646,7 +692,7 @@ const Coop = {
         }
         this.partyNode = node;
         this.partyKey = this.keyOf(node);
-        if (Game.state === 'map') {
+        if (Game.state === 'map' || Players.local.dead) {
             this.travel();
         } else if (Game.room) {
             this.deadline = performance.now() + CONFIG.travelCountdown * 1000;
@@ -722,7 +768,8 @@ const Coop = {
         for (const r of Net.roster) {
             const p = r.id === Net.id ? Players.local : Players.get(r.id);
             const here = !!p && !!this.partyKey && p.room === this.partyKey;
-            lines.push((here ? '● ' : '○ ') + r.name + (r.id === Net.id ? ' (you)' : '') + (here ? '' : '  travelling'));
+            const status = !p ? '' : p.dead ? '  dead' : p.down ? '  downed' : '';
+            lines.push((here ? '● ' : '○ ') + r.name + (r.id === Net.id ? ' (you)' : '') + (here ? '' : '  travelling') + status);
         }
         const text = lines.join('\n');
         if (text !== this.partyText) {

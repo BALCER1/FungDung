@@ -28,7 +28,7 @@ const Arsenal = {
         this.makeHud();
         this.select(Weapons.order[0]);
 
-        const playing = () => typeof Game !== 'undefined' && Game.state === 'playing';
+        const playing = () => typeof Game !== 'undefined' && Game.state === 'playing' && !(Players.local && Players.local.down);
         addEventListener('mousedown', e => {
             if (!playing()) {
                 return;
@@ -161,14 +161,16 @@ const Arsenal = {
         const z = this.scope.update(this.current, camera, CONFIG.fov);
         const cross = document.getElementById('cross');
         if (cross) {
-            cross.hidden = z > 0.6;
+            cross.hidden = z > 0.6 || Players.local.down;
         }
         this.updateHud();
     },
 
     render() {
         renderer.render(scene, camera);
-        this.view.render(renderer, scene);
+        if (!Players.local.down) {
+            this.view.render(renderer, scene);
+        }
     },
 
     trace(origin, dir, range) {
@@ -214,6 +216,7 @@ const Arsenal = {
         el.innerHTML = '<div data-n style="opacity:.8"></div><div><span data-a style="font-size:30px"></span> <span data-m style="opacity:.6"></span></div>' +
             '<div style="height:3px;background:#fff3;margin-top:4px"><i data-r style="display:block;height:100%;width:0"></i></div>';
         (hud || document.body).appendChild(el);
+        this.hudEl = el;
         this.hud = {
             name: el.querySelector('[data-n]'),
             ammo: el.querySelector('[data-a]'),
@@ -227,6 +230,7 @@ const Arsenal = {
         if (!this.hud || !w) {
             return;
         }
+        this.hudEl.style.display = Players.local && Players.local.down ? 'none' : '';
         this.hud.name.textContent = w.name + (w.def.altName ? '  ·  RMB ' + w.def.altName : '');
         this.hud.ammo.textContent = w.ammo;
         this.hud.mag.textContent = '/ ' + w.stats.mag;
