@@ -184,7 +184,8 @@ const Life = {
         if (Vitals.dead && !L.down) {
             this.goDown();
         }
-        if (L.down && !L.dead) {
+        // The bleed-out timer pauses while a teammate is holding E on us.
+        if (L.down && !L.dead && !this.helper()) {
             this.bleed -= dt;
             if (this.bleed <= 0) {
                 this.toSpectator();
@@ -196,6 +197,12 @@ const Life = {
         }
         this.updateReviving(dt);
         this.updateHud();
+    },
+
+    // The teammate currently picking the local player up, if any.
+    helper() {
+        const L = Players.local;
+        return Players.list.find(p => !p.local && !p.down && p.rv === L.id && p.rvT > 0) || null;
     },
 
     stopReviving() {
@@ -426,9 +433,10 @@ const Life = {
             return;
         }
         if (L.down) {
-            const by = Players.list.find(p => !p.local && p.rv === L.id && p.rvT > 0);
+            const by = this.helper();
             this.show(by ? name(by) + ' is picking you up' : '', by ? by.rvT : null,
-                'Downed  ' + Math.max(0, Math.ceil(this.bleed)) + 's', 'A teammate can hold E next to you to pick you up');
+                'Downed  ' + Math.max(0, Math.ceil(this.bleed)) + 's' + (by ? '  (paused)' : ''),
+                'A teammate can hold E next to you to pick you up');
             return;
         }
         if (this.target) {

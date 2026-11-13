@@ -190,6 +190,9 @@ const Arsenal = {
 
     shoot(shot) {
         shot.by = Players.local;
+        if (Settings.god()) {
+            shot.damage = CONFIG.god.damage;
+        }
         if (this.onLocalShot && shot.dirs.length) {
             this.onLocalShot(shot);
         }

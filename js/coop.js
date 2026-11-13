@@ -382,7 +382,7 @@ const Coop = {
         const r2 = v => Math.round(v * 100) / 100;
         const r3 = v => Math.round(v * 1000) / 1000;
         const flags = (Player.onGround ? 1 : 0) | (L.sprinting ? 2 : 0) | (w.reloading ? 4 : 0) | (w.altHeld ? 8 : 0) |
-            (w.zoom > 0.5 ? 16 : 0) | (L.inRoom && door && door.isOpen ? 32 : 0) | (L.down ? 64 : 0) | (L.dead ? 128 : 0);
+            (w.zoom > 0.5 ? 16 : 0) | (L.inRoom && door && door.isOpen ? 32 : 0) | (L.down ? 64 : 0) | (L.dead ? 128 : 0) | (L.god ? 256 : 0);
         const out = [
             Net.id, r2(Player.pos.x), r2(Player.pos.y), r2(Player.pos.z), r2(Player.vel.x), r2(Player.vel.y), r2(Player.vel.z),
             r3(Player.yaw), r3(Player.pitch), w.id, w.state, w.ammo, flags, Math.round(Vitals.hp / Vitals.max * 100),
@@ -413,6 +413,7 @@ const Coop = {
         p.door = !!(f & 32);
         p.down = !!(f & 64);
         p.dead = !!(f & 128);
+        p.god = !!(f & 256);
         p.hpF = Math.max(0, Math.min(1, (+a[13] || 0) / 100));
         p.room = String(a[14] || '');
         p.rv = String(a[15] || '');
@@ -570,7 +571,7 @@ const Coop = {
         }
         const shot = {
             weapon: String(msg.w), mode, origin, by, remote: true,
-            damage: Math.max(0, Math.min(+msg.d || 0, maxDamage)),
+            damage: Math.max(0, Math.min(+msg.d || 0, by.god ? CONFIG.god.damage : maxDamage)),
             dirs: new Array(Math.max(0, Math.min(msg.p | 0, maxPellets)))
         };
         const hits = Array.isArray(msg.h) ? msg.h.filter(Array.isArray).slice(0, Math.max(1, maxPellets)) : [];

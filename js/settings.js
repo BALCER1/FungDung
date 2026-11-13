@@ -8,6 +8,7 @@ const Settings = {
         fullscreen: false,
         darkMode: false,
         devMode: false,
+        godMode: false,
         enemyDetail: 'high',
         gunDetail: 'high',
         antialias: true,
@@ -43,6 +44,7 @@ const Settings = {
             res: $('setRes'),
             dark: $('setDark'),
             dev: $('setDev'),
+            god: $('setGod'),
             enemyDetail: $('setEnemyDetail'),
             gunDetail: $('setGunDetail'),
             lighting: $('setLighting'),
@@ -70,6 +72,8 @@ const Settings = {
         this.el.dark.onchange = () => this.set('darkMode', this.el.dark.checked);
         this.el.dev.checked = this.values.devMode;
         this.el.dev.onchange = () => this.set('devMode', this.el.dev.checked);
+        this.el.god.checked = this.values.godMode;
+        this.el.god.onchange = () => this.set('godMode', this.el.god.checked);
         for (const k in this.choices) {
             if (!this.choices[k].includes(this.values[k])) {
                 this.values[k] = this.choices[k][0];
@@ -111,6 +115,11 @@ const Settings = {
 
         this.showTab('graphics');
         this.apply();
+    },
+
+    // God mode is per browser, so it only ever affects the player who turned it on.
+    god() {
+        return this.values.devMode && this.values.godMode;
     },
 
     showTab(name) {

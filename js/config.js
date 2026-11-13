@@ -12,7 +12,7 @@ const CONFIG = {
     sensitivity: 0.002,
     stages: 12,
     version: '1.0',
-    netVersion: 6,
+    netVersion: 7,
     coopEnemyCount: 0.3,
     coopEnemyDamage: 0.3,
     coopEnemyHealth: 0,
@@ -26,6 +26,9 @@ const CONFIG = {
         reviveRange: 2,
         reviveHp: 0.3,
         eye: 0.45
+    },
+    god: {
+        damage: 1000000
     },
     vending: {
         uses: 1,

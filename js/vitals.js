@@ -83,6 +83,11 @@ const Vitals = {
     },
 
     update(dt) {
+        const god = Settings.god();
+        if (god !== this.godShown) {
+            this.godShown = god;
+            this.draw();
+        }
         this.flash = Math.max(0, this.flash - dt * 1.6);
         const spectating = typeof Players !== 'undefined' && Players.local && Players.local.dead;
         const low = this.hp / this.max < 0.3 && !spectating ?0.25 + 0.1 * Math.sin(performance.now() / 160) : 0;
@@ -103,7 +108,7 @@ const Vitals = {
             return;
         }
         const f = this.hp / this.max;
-        this.el.value.textContent = Math.ceil(this.hp) + ' / ' + this.max;
+        this.el.value.textContent = Math.ceil(this.hp) + ' / ' + this.max + (this.godShown ? '  GOD' : '');
         this.el.bar.style.width = (f * 100) + '%';
         this.el.bar.style.background = f < 0.3 ? '#ff3b4e' : f < 0.6 ? '#ffb347' : '#e8eaed';
     }

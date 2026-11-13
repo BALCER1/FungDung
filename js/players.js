@@ -24,6 +24,7 @@ const Players = {
             inRoom: true,
             down: false,
             dead: false,
+            god: false,
             rv: '',
             rvT: 0,
             nav: { floor: 0, top: false, cells: [0, 0] },
@@ -69,11 +70,12 @@ const Players = {
         P.zoom = w ? w.zoom : 0;
         P.weapon = w ? w.id : '';
         P.hpF = Vitals.hp / Vitals.max;
+        P.god = Settings.god();
         P.sprinting = Math.hypot(Player.vel.x, Player.vel.z) > CONFIG.walk + 0.5;
     },
 
     hurt(p, amount, o = {}) {
-        if (!p || p.down) {
+        if (!p || p.down || p.god) {
             return 0;
         }
         const dmg = Math.round(amount * this.damageScale);
@@ -86,6 +88,9 @@ const Players = {
     },
 
     applyLocal(dmg, o = {}) {
+        if (Settings.god()) {
+            return;
+        }
         Vitals.hurt(dmg, o.from);
         const d = o.dir;
         if (d && o.knock) {

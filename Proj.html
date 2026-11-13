@@ -886,6 +886,9 @@
       <div class="row">Dev mode
         <input id="setDev" type="checkbox">
       </div>
+      <div class="row">God mode (dev mode only)
+        <input id="setGod" type="checkbox">
+      </div>
       <div class="row">Run seed (dev mode only)
         <input id="setSeed" type="text" maxlength="20" placeholder="random" autocomplete="off" spellcheck="false">
       </div>
@@ -895,6 +898,7 @@
       <p>The FPS counter shows frame time and how much of it is spent in game code (JS). If FPS is low and frame time is much higher than JS time, the graphics card is the bottleneck; if JS time is close to frame time, the game code (usually enemy AI) is.</p>
       <p>Shows every enemy's stats, what it's thinking, its vision cone, current path, the pack's memory of you (red = last seen, orange = where it thinks you went) and how long the enemy AI takes each frame.</p>
       <p>While dev mode is on, ` (backtick) hides and shows the overlay.</p>
+      <p>God mode makes you take no damage and your shots kill anything they hit. It only affects you, even in co-op.</p>
       <p>With dev mode on, a run seed makes the next run use that exact map, rooms and enemy spawns. Leave it empty for a random run. The current seed is shown next to the stage name.</p>
     </div>
   </div>

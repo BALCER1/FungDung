@@ -47,6 +47,9 @@ saves and the lobby list. Co-op is host-based over PeerJS (WebRTC).
 - Syntax check a file with `node --check js/<file>.js`. Everything else is tested by playing.
 - Dev mode (Settings > Developer) shows enemy AI state, paths and pack memory. Backtick toggles
   the overlay.
+- God mode (Settings > Developer, needs dev mode): `Settings.god()`. Per browser, so only the
+  player who ticked it. `Players.hurt` skips players with `god` (state bit 256 for remote players),
+  own shots deal `CONFIG.god.damage`, and the host lets a god guest's shots past its damage clamp.
 
 ## Layout
 
@@ -201,7 +204,8 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
   `CONFIG.downed.bleedout` seconds. A downed player moved on with the party becomes a spectator.
 - Revive: hold E near a downed teammate for `CONFIG.downed.reviveTime`. The state array carries the
   reviver's target id and progress (fields 15 and 16). Guests send `rv`; the host checks it in
-  `Life.grantRevive` and sends `up` to the target.
+  `Life.grantRevive` and sends `up` to the target. The bleed-out timer pauses while a teammate
+  is holding E on you (`Life.helper()`).
 - Spectators keep `Game.present` true (so they get enemy snapshots) but never move. The camera sits
   in the watched player's `Avatar` head (body, eyes and label hidden), using the spectator's own
   FOV and graphics settings. Click to switch. Dead guests travel with the party at once. A dead host
