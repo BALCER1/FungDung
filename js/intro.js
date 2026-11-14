@@ -1,78 +1,81 @@
 const Intro = {
-    gravity: 4200,
-    peak: 150,
-    restitution: 0.55,
-    squashMax: 0.14,
+    // Input right after freezing is ignored, so one press (double-click, a key that sends two
+    // events) cannot skip the frozen last frame too.
+    lock: 0.5,
 
     play(done) {
-        this.title = document.getElementById('introTitle');
         this.screen = document.getElementById('introScreen');
+        this.video = document.getElementById('introVideo');
+        this.still = document.getElementById('introStill');
+        this.sound = document.getElementById('introSound');
+        this.hint = document.getElementById('introHint');
         this.done = done;
+        this.phase = 'video';
 
-        this.y = innerHeight * 0.6;
-        this.vy = -Math.sqrt(2 * this.gravity * (this.y + this.peak));
-        this.squash = 0;
-        this.squashVel = 0;
-        this.settled = false;
+        this.skip = e => {
+            if (e && e.repeat) {
+                return;
+            }
+            if (this.phase === 'video') {
+                this.showStill();
+            } else if (this.phase === 'still' && performance.now() - this.stillAt > this.lock * 1000) {
+                this.finish();
+            }
+        };
+        this.unmute = e => {
+            e.stopPropagation();
+            this.video.muted = false;
+            this.sound.hidden = true;
+        };
+        this.ended = () => this.showStill();
+        this.failed = () => this.showStill();
 
-        this.skip = () => this.finish();
         addEventListener('keydown', this.skip);
         this.screen.addEventListener('pointerdown', this.skip);
+        this.sound.addEventListener('pointerdown', this.unmute);
+        this.video.addEventListener('ended', this.ended);
+        this.video.addEventListener('error', this.failed);
 
-        this.last = performance.now();
-        this.frame = requestAnimationFrame(t => this.tick(t));
+        this.video.muted = false;
+        this.video.play().catch(() => {
+            if (this.phase !== 'video') {
+                return;
+            }
+            this.video.muted = true;
+            this.sound.hidden = false;
+            this.video.play().catch(this.failed);
+        });
     },
 
-    tick(now) {
-        let dt = Math.min((now - this.last) / 1000, 1 / 30);
-        this.last = now;
-        const step = 1 / 240;
-        while (dt > 0) {
-            const h = Math.min(step, dt);
-            this.simulate(h);
-            dt -= h;
-        }
-
-        const s = this.squash;
-        this.title.style.transform = `translate3d(0, ${this.y.toFixed(2)}px, 0) scale(${(1 + s).toFixed(4)}, ${(1 - s).toFixed(4)})`;
-
-        if (this.settled && Math.abs(this.squash) < 0.001) {
-            this.title.style.transform = 'none';
-            this.timer = setTimeout(this.skip, 700);
+    showStill() {
+        if (this.phase !== 'video') {
             return;
         }
-        this.frame = requestAnimationFrame(t => this.tick(t));
-    },
-
-    simulate(h) {
-        if (!this.settled) {
-            this.vy += this.gravity * h;
-            this.y += this.vy * h;
-            if (this.y >= 0 && this.vy > 0) {
-                this.y = 0;
-                this.squashVel += this.vy * 0.0016;
-                this.vy *= -this.restitution;
-                if (Math.abs(this.vy) < 120) {
-                    this.vy = 0;
-                    this.settled = true;
-                }
-            }
-        }
-        const k = 900;
-        const c = 30;
-        this.squashVel += (-k * this.squash - c * this.squashVel) * h;
-        this.squash = Math.max(-this.squashMax, Math.min(this.squashMax, this.squash + this.squashVel * h));
+        this.phase = 'still';
+        this.stillAt = performance.now();
+        this.video.pause();
+        this.still.hidden = false;
+        this.sound.hidden = true;
+        this.hint.textContent = 'Press any key to continue';
     },
 
     finish() {
-        cancelAnimationFrame(this.frame);
-        clearTimeout(this.timer);
+        if (this.phase === 'done') {
+            return;
+        }
+        this.phase = 'done';
         removeEventListener('keydown', this.skip);
         this.screen.removeEventListener('pointerdown', this.skip);
+        this.sound.removeEventListener('pointerdown', this.unmute);
+        this.video.removeEventListener('ended', this.ended);
+        this.video.removeEventListener('error', this.failed);
         this.screen.classList.add('out');
         this.done();
         setTimeout(() => {
             this.screen.hidden = true;
+            this.video.pause();
+            this.video.removeAttribute('src');
+            this.video.load();
         }, 500);
     }
 };

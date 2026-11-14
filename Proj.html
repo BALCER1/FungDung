@@ -240,8 +240,41 @@
 
   #introScreen {
     z-index: 10;
-    background: var(--bg);
+    background: #000;
     transition: opacity .5s ease;
+  }
+
+  #introVideo,
+  #introStill {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: fill;
+  }
+
+  #introHint {
+    position: absolute;
+    right: 24px;
+    bottom: 20px;
+    color: rgba(255, 255, 255, .8);
+    font-size: 13px;
+    letter-spacing: 1px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, .9);
+    pointer-events: none;
+  }
+
+  .screen #introSound {
+    position: absolute;
+    left: 24px;
+    bottom: 16px;
+    width: auto;
+    padding: 6px 14px;
+    font-size: 13px;
+    color: #fff;
+    background: rgba(0, 0, 0, .55);
+    border: 1px solid rgba(255, 255, 255, .35);
+    border-radius: 6px;
   }
 
   #introScreen.out {
@@ -257,14 +290,6 @@
     color: var(--red);
     -webkit-font-smoothing: antialiased;
     text-rendering: geometricPrecision;
-  }
-
-  .screen #introTitle {
-    font-size: clamp(80px, 11vw, 150px);
-    transform: translate3d(0, 60vh, 0);
-    transform-origin: 50% 100%;
-    will-change: transform;
-    backface-visibility: hidden;
   }
 
   #mainMenu {
@@ -633,7 +658,10 @@
 </div>
 
 <div id="introScreen" class="screen">
-  <h1 id="introTitle" class="logo">FungDung</h1>
+  <video id="introVideo" src="media/intro.mp4" preload="auto" playsinline></video>
+  <img id="introStill" src="media/intro-end.jpg" alt="FungDung" hidden>
+  <button id="introSound" type="button" hidden>Sound on</button>
+  <div id="introHint">Press any key to skip</div>
 </div>
 
 <div id="mainMenu" class="screen" hidden>
