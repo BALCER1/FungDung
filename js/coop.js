@@ -283,8 +283,8 @@ const Coop = {
                 this.travel();
             }
         });
-        addEventListener('keydown', e => {
-            if (e.code === 'KeyT' && !e.repeat && this.deadline && Game.state === 'playing') {
+        Keys.onPress('travel', e => {
+            if (!e.repeat && this.deadline && Game.state === 'playing') {
                 this.travel();
             }
         });

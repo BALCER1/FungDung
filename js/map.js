@@ -204,7 +204,7 @@ const MapView = {
         if (opts.info) {
             this.info.textContent = opts.info;
         } else if (this.browse) {
-            this.info.textContent = `Stage ${here.layer + 1} of ${total} - ${Rooms.get(here.type).name}. Press M to return`;
+            this.info.textContent = `Stage ${here.layer + 1} of ${total} - ${Rooms.get(here.type).name}. Press ${Keys.key('map')} to return`;
         } else if (here) {
             const n = this.choices.length;
             this.info.textContent = `Stage ${here.layer + 2} of ${total} - choose your next room (${n} option${n > 1 ? 's' : ''})`;

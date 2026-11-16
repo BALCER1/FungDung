@@ -29,52 +29,42 @@ const Arsenal = {
         this.select(Weapons.order[0]);
 
         const playing = () => typeof Game !== 'undefined' && Game.state === 'playing' && !(Players.local && Players.local.down);
-        addEventListener('mousedown', e => {
-            if (!playing()) {
-                return;
-            }
-            if (e.button === 0) {
-                this.firing = true;
-                this.current.setTrigger(true);
-            } else if (e.button === 2) {
-                this.current.setAlt(true);
+        const press = (id, fn) => Keys.onPress(id, e => {
+            if (playing() && !e.repeat) {
+                fn();
             }
         });
-        addEventListener('mouseup', e => {
-            if (e.button === 0) {
-                this.firing = false;
-                this.current.setTrigger(false);
-            } else if (e.button === 2) {
-                this.current.setAlt(false);
-            }
+        press('fire', () => {
+            this.firing = true;
+            this.current.setTrigger(true);
         });
+        press('alt', () => this.current.setAlt(true));
+        Keys.onRelease('fire', () => {
+            this.firing = false;
+            this.current.setTrigger(false);
+        });
+        Keys.onRelease('alt', () => this.current.setAlt(false));
         addEventListener('contextmenu', e => {
             if (playing()) {
                 e.preventDefault();
             }
         });
-        addEventListener('wheel', e => {
-            if (playing()) {
-                const i = Weapons.order.indexOf(this.current.id);
-                const n = Weapons.order.length;
-                this.select(Weapons.order[(i + (e.deltaY > 0 ? 1 : n - 1)) % n]);
-            }
-        });
-        addEventListener('keydown', e => {
-            if (!playing() || e.repeat) {
-                return;
-            }
-            const n = parseInt(e.key, 10);
-            if (n >= 1 && n <= Weapons.order.length) {
-                this.select(Weapons.order[n - 1]);
-            }
-            if (e.code === 'KeyR') {
-                this.current.reload();
-            }
-            if (e.code === 'KeyF') {
-                this.current.inspect();
-            }
-        });
+        const cycle = step => {
+            const i = Weapons.order.indexOf(this.current.id);
+            const n = Weapons.order.length;
+            this.select(Weapons.order[(i + step + n) % n]);
+        };
+        press('nextWeapon', () => cycle(1));
+        press('prevWeapon', () => cycle(-1));
+        for (let n = 1; n <= 4; n++) {
+            press('weapon' + n, () => {
+                if (n <= Weapons.order.length) {
+                    this.select(Weapons.order[n - 1]);
+                }
+            });
+        }
+        press('reload', () => this.current.reload());
+        press('inspect', () => this.current.inspect());
         document.addEventListener('pointerlockchange', () => {
             if (!document.pointerLockElement) {
                 this.firing = false;
@@ -150,12 +140,11 @@ const Arsenal = {
     },
 
     update(dt) {
-        const k = Input.keys;
         const speed = Math.hypot(Player.vel.x, Player.vel.z);
-        const moving = k.KeyW || k.KeyA || k.KeyS || k.KeyD || k.ArrowUp || k.ArrowDown || k.ArrowLeft || k.ArrowRight;
+        const moving = Keys.held('forward') || Keys.held('back') || Keys.held('left') || Keys.held('right');
         this.current.update(dt, {
             speed,
-            sprinting: !!(k.ShiftLeft || k.ShiftRight) && moving && speed > CONFIG.walk + 0.5,
+            sprinting: Keys.held('sprint') && moving && speed > CONFIG.walk + 0.5,
             grounded: Player.onGround
         });
         const z = this.scope.update(this.current, camera, CONFIG.fov);

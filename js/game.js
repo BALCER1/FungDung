@@ -13,6 +13,7 @@ const Game = {
             this.el[id] = document.getElementById(id);
         }
         Input.init();
+        Keys.init();
         Settings.init();
         Profile.init();
         Net.init();
@@ -45,14 +46,19 @@ const Game = {
             if (e.code === 'Escape' && this.state === 'playing') {
                 document.exitPointerLock();
             }
-            if (e.code === 'KeyM' && !e.repeat) {
-                if (this.state === 'playing') {
-                    this.browseMap();
-                } else if (this.state === 'mapview') {
-                    this.closeBrowse();
-                }
+        });
+        Keys.onPress('map', e => {
+            if (e.repeat) {
+                return;
             }
-            if (e.code === 'KeyE' && this.state === 'playing' && this.room.door && this.room.door.near(Player.pos) &&
+            if (this.state === 'playing') {
+                this.browseMap();
+            } else if (this.state === 'mapview') {
+                this.closeBrowse();
+            }
+        });
+        Keys.onPress('interact', () => {
+            if (this.state === 'playing' && this.room.door && this.room.door.near(Player.pos) &&
                 !Players.local.down && !Life.claimsE()) {
                 this.room.door.open();
             }

@@ -642,19 +642,83 @@
   .row.off {
     opacity: .4;
   }
+
+  #bindList {
+    max-height: 44vh;
+    overflow-y: auto;
+    padding-right: 6px;
+  }
+
+  .bindHead {
+    margin: 10px 0 2px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .row.bind {
+    padding: 3px 0;
+    font-size: 14px;
+  }
+
+  .row.bind .unbound {
+    color: var(--red);
+  }
+
+  .screen button.key {
+    width: 96px;
+    padding: 5px 6px;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+  }
+
+  .screen button.key:hover {
+    border-color: var(--red);
+  }
+
+  .screen button.key.empty {
+    color: var(--muted);
+  }
+
+  .screen button.key.wait {
+    color: var(--red);
+    border-color: var(--red);
+  }
+
+  #bindMsg {
+    min-height: 18px;
+  }
+
+  #optionsMenu #bindReset {
+    flex: none;
+    font-weight: 600;
+    color: #fff;
+    background: var(--red);
+    border: none;
+    border-radius: 6px;
+  }
+
+  #optionsMenu #bindReset:hover {
+    background: var(--red-dark);
+  }
 </style>
 </head>
 <body>
 <div id="hud" hidden>
   <div id="cross"></div>
   <div id="stageLabel"></div>
-  <div id="tip" hidden>E: open door</div>
+  <div id="tip" hidden><span data-key="interact">E</span>: open door</div>
 </div>
 
 <div id="party" hidden></div>
 <div id="travelPrompt" hidden>
   <span id="travelText"></span>
-  <button id="travelBtn" type="button">Travel now (T)</button>
+  <button id="travelBtn" type="button">Travel now (<span data-key="travel">T</span>)</button>
 </div>
 
 <div id="introScreen" class="screen">
@@ -906,8 +970,12 @@
       <div class="row">Mouse sensitivity
         <span class="ctl"><input id="sens" type="range" min="1" max="10" step="0.5"><output id="sensOut"></output></span>
       </div>
-      <p>WASD move &middot; Space jump &middot; Shift sprint &middot; E interact &middot; M map &middot; Esc pause</p>
-      <p>LMB fire &middot; RMB alt fire &middot; R reload &middot; F inspect &middot; 1-4 / wheel switch weapon</p>
+      <div id="bindList"></div>
+      <p id="bindMsg"></p>
+      <div class="row">
+        <span>Click a slot to rebind it. Esc always pauses.</span>
+        <button id="bindReset" class="mini" type="button">Reset to defaults</button>
+      </div>
     </div>
 
     <div class="tab" data-tab="developer" hidden>
@@ -925,7 +993,7 @@
       </div>
       <p>The FPS counter shows frame time and how much of it is spent in game code (JS). If FPS is low and frame time is much higher than JS time, the graphics card is the bottleneck; if JS time is close to frame time, the game code (usually enemy AI) is.</p>
       <p>Shows every enemy's stats, what it's thinking, its vision cone, current path, the pack's memory of you (red = last seen, orange = where it thinks you went) and how long the enemy AI takes each frame.</p>
-      <p>While dev mode is on, ` (backtick) hides and shows the overlay.</p>
+      <p>While dev mode is on, <span data-key="devOverlay">`</span> hides and shows the overlay (rebind it under Controls).</p>
       <p>God mode makes you take no damage and your shots kill anything they hit. It only affects you, even in co-op.</p>
       <p>With dev mode on, a run seed makes the next run use that exact map, rooms and enemy spawns. Leave it empty for a random run. The current seed is shown next to the stage name.</p>
     </div>
@@ -947,7 +1015,7 @@
   <div id="mapInfo"></div>
   <div id="mapHint">Click or press any key to skip</div>
   <div id="legend"></div>
-  <button id="mapBackBtn" hidden>Back to room (M)</button>
+  <button id="mapBackBtn" hidden>Back to room (<span data-key="map">M</span>)</button>
 </div>
 
 <div id="endScreen" class="screen" hidden>
@@ -976,6 +1044,7 @@
 <script src="js/profile.js"></script>
 <script src="js/config.js"></script>
 <script src="js/rng.js"></script>
+<script src="js/keys.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/batch.js"></script>
 <script src="js/perf.js"></script>

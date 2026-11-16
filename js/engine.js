@@ -53,6 +53,12 @@ const Input = {
         addEventListener('keyup', e => {
             this.keys[e.code] = false;
         });
+        addEventListener('mousedown', e => {
+            this.keys['Mouse' + e.button] = true;
+        });
+        addEventListener('mouseup', e => {
+            this.keys['Mouse' + e.button] = false;
+        });
         addEventListener('blur', () => {
             this.keys = {};
         });
@@ -169,10 +175,9 @@ const Player = {
     },
 
     update(dt) {
-        const k = Input.keys;
-        const fwd = (k.KeyW || k.ArrowUp ? 1 : 0) - (k.KeyS || k.ArrowDown ? 1 : 0);
-        const str = (k.KeyD || k.ArrowRight ? 1 : 0) - (k.KeyA || k.ArrowLeft ? 1 : 0);
-        const speed = k.ShiftLeft || k.ShiftRight ? CONFIG.sprint : CONFIG.walk;
+        const fwd = (Keys.held('forward') ? 1 : 0) - (Keys.held('back') ? 1 : 0);
+        const str = (Keys.held('right') ? 1 : 0) - (Keys.held('left') ? 1 : 0);
+        const speed = Keys.held('sprint') ? CONFIG.sprint : CONFIG.walk;
 
         const sin = Math.sin(this.yaw);
         const cos = Math.cos(this.yaw);
@@ -195,7 +200,7 @@ const Player = {
         this.vel.x += (wx - this.vel.x) * t;
         this.vel.z += (wz - this.vel.z) * t;
 
-        if (k.Space && this.onGround) {
+        if (Keys.held('jump') && this.onGround) {
             this.vel.y = CONFIG.jump;
             this.onGround = false;
         }

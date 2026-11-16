@@ -80,8 +80,8 @@ const Life = {
                 e.preventDefault();
             }
         });
-        addEventListener('keydown', e => {
-            if (e.code === 'KeyE' && !e.repeat && Game.state === 'playing' && this.nearVending()) {
+        Keys.onPress('interact', e => {
+            if (!e.repeat && Game.state === 'playing' && this.nearVending()) {
                 this.useVending();
             }
         });
@@ -231,7 +231,7 @@ const Life = {
         }
         this.target = target;
         this.reviveWait = Math.max(0, this.reviveWait - dt);
-        if (target && Input.keys.KeyE && !this.reviveWait) {
+        if (target && Keys.held('interact') && !this.reviveWait) {
             if (this.reviveId !== target.id) {
                 this.reviveId = target.id;
                 this.reviveT = 0;
@@ -436,18 +436,18 @@ const Life = {
             const by = this.helper();
             this.show(by ? name(by) + ' is picking you up' : '', by ? by.rvT : null,
                 'Downed  ' + Math.max(0, Math.ceil(this.bleed)) + 's' + (by ? '  (paused)' : ''),
-                'A teammate can hold E next to you to pick you up');
+                'A teammate can hold ' + Keys.key('interact') + ' next to you to pick you up');
             return;
         }
         if (this.target) {
-            this.show((this.reviveT > 0 ? 'Picking up ' : 'Hold E to pick up ') + name(this.target), this.reviveT, '', '');
+            this.show((this.reviveT > 0 ? 'Picking up ' : 'Hold ' + Keys.key('interact') + ' to pick up ') + name(this.target), this.reviveT, '', '');
             return;
         }
         if (this.nearVending()) {
             const v = Game.room.vending;
             const n = this.fallen().length;
             const text = v.left === 0 ? 'Respawn machine is out of order'
-                : n ? 'E: respawn ' + n + ' fallen teammate' + (n > 1 ? 's' : '')
+                : n ? Keys.key('interact') + ': respawn ' + n + ' fallen teammate' + (n > 1 ? 's' : '')
                     : 'Respawn machine - no fallen teammates';
             this.show(text, null, '', '');
             return;

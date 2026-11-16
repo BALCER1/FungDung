@@ -1163,8 +1163,8 @@ const Enemies = {
         DevView.init(hud);
         this.ready = true;
         this.setDev(!!Settings.values.devMode);
-        addEventListener('keydown', e => {
-            if (e.code === 'Backquote' && !e.repeat && this.dev) {
+        Keys.onPress('devOverlay', e => {
+            if (!e.repeat && this.dev) {
                 this.overlay = !this.overlay;
                 DevView.show(this.dev && this.overlay);
             }
