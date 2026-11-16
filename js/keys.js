@@ -10,7 +10,8 @@ const Keys = {
             ['left', 'Move left', 'KeyA', 'ArrowLeft'],
             ['right', 'Move right', 'KeyD', 'ArrowRight'],
             ['jump', 'Jump', 'Space'],
-            ['sprint', 'Sprint', 'ShiftLeft', 'ShiftRight']
+            ['sprint', 'Sprint', 'ShiftLeft', 'ShiftRight'],
+            ['crouch', 'Crouch (hold)', 'KeyC']
         ]],
         ['Combat', [
             ['fire', 'Fire', 'Mouse0'],

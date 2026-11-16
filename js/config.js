@@ -12,7 +12,7 @@ const CONFIG = {
     sensitivity: 0.002,
     stages: 12,
     version: '1.0',
-    netVersion: 7,
+    netVersion: 8,
     coopEnemyCount: 0.3,
     coopEnemyDamage: 0.3,
     coopEnemyHealth: 0,
@@ -26,6 +26,17 @@ const CONFIG = {
         reviveRange: 2,
         reviveHp: 0.3,
         eye: 0.45
+    },
+    // Crouch. Stealth only applies to enemies that have not engaged yet; once one has spotted you,
+    // crouching changes nothing about how it sees or hears you.
+    crouch: {
+        speed: 3.2,         // move speed while crouched (walk is 6)
+        eye: 1.1,           // camera height while crouched
+        rate: 10,           // how fast the camera moves between standing and crouched
+        sight: 0.6,         // unaware enemy's sight range is multiplied by this
+        near: 0.5,          // its close-range "felt you behind me" radius is multiplied by this
+        vision: 0.5,        // how fast its suspicion builds is multiplied by this
+        step: 2             // footstep noise radius for unaware enemies (walk 5, sprint 14)
     },
     god: {
         damage: 1000000

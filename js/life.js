@@ -375,7 +375,7 @@ const Life = {
             const av = p && Coop.avatars.get(p.id);
             if (av && av.group.visible) {
                 camera.position.copy(av.base);
-                camera.position.y += p.down ? CONFIG.downed.eye : CONFIG.eye;
+                camera.position.y += p.down ? CONFIG.downed.eye : av.head.position.y;
                 camera.rotation.set(av.pitch, av.yaw, 0);
             } else {
                 camera.position.set(Player.pos.x, Player.pos.y + CONFIG.downed.eye, Player.pos.z);
@@ -391,11 +391,12 @@ const Life = {
             return;
         }
         if (this.eye < CONFIG.eye) {
-            this.eye += (CONFIG.eye - this.eye) * k;
-            if (this.eye > CONFIG.eye - 0.01) {
+            const top = Player.eyeY();
+            this.eye += (top - this.eye) * k;
+            if (this.eye > top - 0.01) {
                 this.eye = CONFIG.eye;
             }
-            camera.position.set(Player.pos.x, Player.pos.y + this.eye, Player.pos.z);
+            camera.position.set(Player.pos.x, Player.pos.y + Math.min(this.eye, top), Player.pos.z);
         }
     },
 

@@ -2257,23 +2257,28 @@ class ShellcapMind extends HiveMind {
     vision(e, T) {
         const cfg = this.cfg;
         const P = T.pos;
+        // Crouching only fools enemies that have not engaged. Once one has spotted you it sees you normally.
+        const sneak = T.crouching && !e.engaged;
+        const C = CONFIG.crouch;
+        const sight = sneak ? cfg.sight * C.sight : cfg.sight;
         const dx = P.x - e.pos.x;
         const dz = P.z - e.pos.z;
         const hd = Math.hypot(dx, dz);
         const d = Math.hypot(hd, P.y - e.pos.y);
-        if (d > cfg.sight) {
+        if (d > sight) {
             return 0;
         }
         const dot = hd > 0.01 ? (dx * Math.sin(e.yaw) + dz * Math.cos(e.yaw)) / hd : 1;
         const cosH = Math.cos(cfg.cone);
         const inCone = dot > cosH;
-        if (!inCone && d > cfg.near) {
+        if (!inCone && d > (sneak ? cfg.near * C.near : cfg.near)) {
             return 0;
         }
         const nav = Enemies.nav;
         const eyeY = e.pos.y + e.bodyHeight() * 0.85;
         let parts = 0;
-        for (const h of [1.6, 1.0, 0.3]) {
+        // Head, chest and feet. Crouched, the head and chest are lower, so low cover hides them.
+        for (const h of (sneak ? [1.0, 0.6, 0.3] : [1.6, 1.0, 0.3])) {
             if (nav.sight(e.pos.x, eyeY, e.pos.z, P.x, P.y + h, P.z)) {
                 parts++;
             }
@@ -2286,7 +2291,8 @@ class ShellcapMind extends HiveMind {
         if (T.sprinting) {
             s *= 1.4;
         }
-        return Math.max(0.1, s);
+        s = Math.max(0.1, s);
+        return sneak ? s * C.vision : s;
     }
 
     aimedAt(e, k) {

@@ -108,7 +108,17 @@ const Player = {
         this.yaw = spawn.yaw;
         this.pitch = 0;
         this.stun = 0;
+        this.crouching = false;
+        this.crouchK = 0;
         this.syncCamera();
+    },
+
+    // Crouch lowers the camera only. The collision box stays full height, so crouching never
+    // lets you squeeze under anything and standing up can never get stuck.
+    crouching: false,
+    crouchK: 0,
+    eyeY() {
+        return CONFIG.eye - (CONFIG.eye - CONFIG.crouch.eye) * this.crouchK;
     },
 
     stun: 0,
@@ -177,7 +187,9 @@ const Player = {
     update(dt) {
         const fwd = (Keys.held('forward') ? 1 : 0) - (Keys.held('back') ? 1 : 0);
         const str = (Keys.held('right') ? 1 : 0) - (Keys.held('left') ? 1 : 0);
-        const speed = Keys.held('sprint') ? CONFIG.sprint : CONFIG.walk;
+        this.crouching = Keys.held('crouch');
+        this.crouchK += ((this.crouching ? 1 : 0) - this.crouchK) * (1 - Math.exp(-CONFIG.crouch.rate * dt));
+        const speed = this.crouching ? CONFIG.crouch.speed : Keys.held('sprint') ? CONFIG.sprint : CONFIG.walk;
 
         const sin = Math.sin(this.yaw);
         const cos = Math.cos(this.yaw);
@@ -237,7 +249,7 @@ const Player = {
     },
 
     syncCamera() {
-        camera.position.set(this.pos.x, this.pos.y + CONFIG.eye, this.pos.z);
+        camera.position.set(this.pos.x, this.pos.y + this.eyeY(), this.pos.z);
         camera.rotation.set(this.pitch, this.yaw, 0);
     }
 };

@@ -1733,7 +1733,8 @@ const Enemies = {
                 s.t -= dt * sp;
                 if (sp > 1 && s.t <= 0) {
                     s.t = 1.7;
-                    this.noise(P.pos, P.sprinting ? 14 : 5, 'step', null, P);
+                    const loud = P.sprinting ? 14 : 5;
+                    this.noise(P.pos, loud, 'step', null, P, P.crouching ? Math.min(loud, CONFIG.crouch.step) : loud);
                 }
             } else {
                 s.vy = P.vel.y;
@@ -1885,12 +1886,14 @@ const Enemies = {
         this.noise(by.pos, loud, 'shot', null, by);
     },
 
-    noise(pos, radius, kind, src, by) {
+    // `calm` (optional) is the radius heard by enemies that have not engaged yet, e.g. crouched steps.
+    // Engaged enemies always hear the full radius.
+    noise(pos, radius, kind, src, by, calm) {
         for (const e of this.list) {
             if (e.dead) {
                 continue;
             }
-            const r = radius * (e.def.hearing || 1);
+            const r = (calm === undefined || e.engaged ? radius : calm) * (e.def.hearing || 1);
             const d = e.pos.distanceTo(pos);
             if (d < r) {
                 e.mind.hear(e, { pos, src: src || pos, loud: 1 - d / r, kind, by: by || null }, this.time);

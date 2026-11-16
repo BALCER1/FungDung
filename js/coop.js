@@ -8,6 +8,7 @@ class Avatar {
         this.hands = new Hands();
         this.base = new THREE.Vector3();
         this.tip = 0;
+        this.crouch = 0;
 
         this.group = new THREE.Group();
         this.group.name = 'player:' + player.id;
@@ -130,6 +131,7 @@ class Avatar {
             this.yaw = p.yaw;
             this.pitch = p.pitch;
             this.tip = down;
+            this.crouch = p.crouching ? 1 : 0;
         }
         g.visible = true;
         const k = 1 - Math.exp(-14 * dt);
@@ -144,7 +146,18 @@ class Avatar {
         g.position.copy(this.base);
         g.position.y += CONFIG.radius * this.tip;
         g.rotation.set(a, this.yaw, 0);
-        const lh = CONFIG.height + 0.4;
+
+        // Crouched: squash the body and lower the head, eyes and name tag to the crouched eye height.
+        this.crouch += ((p.crouching ? 1 : 0) - this.crouch) * (1 - Math.exp(-CONFIG.crouch.rate * dt));
+        const eyeY = CONFIG.eye - (CONFIG.eye - CONFIG.crouch.eye) * this.crouch;
+        const squash = eyeY / CONFIG.eye;
+        this.body.scale.y = squash;
+        this.head.position.y = eyeY;
+        for (const eye of this.eyes) {
+            eye.position.y = eyeY - 0.1;
+        }
+
+        const lh = CONFIG.height * squash + 0.4;
         this.label.position.set(0, lh * Math.cos(a), -lh * Math.sin(a));
         this.head.visible = !p.down;
 
@@ -382,7 +395,7 @@ const Coop = {
         const r2 = v => Math.round(v * 100) / 100;
         const r3 = v => Math.round(v * 1000) / 1000;
         const flags = (Player.onGround ? 1 : 0) | (L.sprinting ? 2 : 0) | (w.reloading ? 4 : 0) | (w.altHeld ? 8 : 0) |
-            (w.zoom > 0.5 ? 16 : 0) | (L.inRoom && door && door.isOpen ? 32 : 0) | (L.down ? 64 : 0) | (L.dead ? 128 : 0) | (L.god ? 256 : 0);
+            (w.zoom > 0.5 ? 16 : 0) | (L.inRoom && door && door.isOpen ? 32 : 0) | (L.down ? 64 : 0) | (L.dead ? 128 : 0) | (L.god ? 256 : 0) | (L.crouching ? 512 : 0);
         const out = [
             Net.id, r2(Player.pos.x), r2(Player.pos.y), r2(Player.pos.z), r2(Player.vel.x), r2(Player.vel.y), r2(Player.vel.z),
             r3(Player.yaw), r3(Player.pitch), w.id, w.state, w.ammo, flags, Math.round(Vitals.hp / Vitals.max * 100),
@@ -414,11 +427,12 @@ const Coop = {
         p.down = !!(f & 64);
         p.dead = !!(f & 128);
         p.god = !!(f & 256);
+        p.crouching = !!(f & 512) && !p.down;
         p.hpF = Math.max(0, Math.min(1, (+a[13] || 0) / 100));
         p.room = String(a[14] || '');
         p.rv = String(a[15] || '');
         p.rvT = Math.max(0, Math.min(1, (+a[16] || 0) / 100));
-        p.eye.set(p.pos.x, p.pos.y + (p.down ? CONFIG.downed.eye : CONFIG.eye), p.pos.z);
+        p.eye.set(p.pos.x, p.pos.y + (p.down ? CONFIG.downed.eye : p.crouching ? CONFIG.crouch.eye : CONFIG.eye), p.pos.z);
         const cp = Math.cos(p.pitch);
         p.aim.set(-Math.sin(p.yaw) * cp, Math.sin(p.pitch), -Math.cos(p.yaw) * cp);
         if (Array.isArray(a[this.FIELDS])) {

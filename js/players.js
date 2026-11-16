@@ -21,6 +21,7 @@ const Players = {
             weapon: '',
             hpF: 1,
             sprinting: false,
+            crouching: false,
             inRoom: true,
             down: false,
             dead: false,
@@ -62,7 +63,7 @@ const Players = {
         const P = this.local;
         const w = Arsenal.current;
         camera.getWorldDirection(P.aim);
-        P.eye.set(Player.pos.x, Player.pos.y + CONFIG.eye, Player.pos.z);
+        P.eye.set(Player.pos.x, Player.pos.y + Player.eyeY(), Player.pos.z);
         P.yaw = Player.yaw;
         P.pitch = Player.pitch;
         P.onGround = Player.onGround;
@@ -72,6 +73,7 @@ const Players = {
         P.hpF = Vitals.hp / Vitals.max;
         P.god = Settings.god();
         P.sprinting = Math.hypot(Player.vel.x, Player.vel.z) > CONFIG.walk + 0.5;
+        P.crouching = Player.crouching && !P.down;
     },
 
     hurt(p, amount, o = {}) {
