@@ -1227,6 +1227,7 @@ const Enemies = {
         this.blast = null;
         this.fx.reset();
         CommFX.clear();
+        DamageNumbers.clear();
         DevView.reset();
     },
 
@@ -1837,7 +1838,28 @@ const Enemies = {
             list.push({ part, hit, dir });
             return null;
         }
-        return e.takeHit(shot.damage, part, hit, dir, shot);
+        const before = e.hp;
+        const kind = e.takeHit(shot.damage, part, hit, dir, shot);
+        this.dealt(e, before - Math.max(0, e.hp), hit.point, kind, shot);
+        return kind;
+    },
+
+    // Health a shot took off an enemy, for damage numbers. Only the shooter sees them: a guest's
+    // amounts are collected on the shot and sent back in the host's `hm` reply.
+    dealt(e, amount, point, kind, shot) {
+        if (!kind || !(amount > 0)) {
+            return;
+        }
+        if (shot && shot.remote) {
+            if (shot.dealt && shot.dealt.length < 24) {
+                const r = v => Math.round(v * 100) / 100;
+                shot.dealt.push([e.id, r(amount), r(point.x), r(point.y), r(point.z), kind]);
+            }
+            return;
+        }
+        if (!shot || !shot.by || shot.by === Players.local) {
+            DamageNumbers.add(e.id, amount, point, kind);
+        }
     },
 
     onShotEnd(shot) {
@@ -1862,7 +1884,13 @@ const Enemies = {
             if (e.dead) {
                 continue;
             }
+            const before = e.hp;
             const res = e.takeBlast ? e.takeBlast(hits, shot) : hits.map(h => e.takeHit(shot.damage, h.part, h.hit, h.dir, shot)).pop();
+            const at = new THREE.Vector3();
+            for (const h of hits) {
+                at.add(h.hit.point);
+            }
+            this.dealt(e, before - Math.max(0, e.hp), at.divideScalar(hits.length), res, shot);
             if (res && (!best || rank[res] > rank[best])) {
                 best = res;
             }
@@ -1902,10 +1930,11 @@ const Enemies = {
     },
 
     hitmark(kind) {
-        if (!kind) {
+        const mode = Settings.values.hitmarkers;
+        if (!kind || mode === 'off') {
             return;
         }
-        this.hitEl.style.color = { shell: '#d8d2c4', break: '#ffd36b', flesh: '#7dffb5', crit: '#ff9a3c', kill: '#ff3b4e' }[kind] || '#fff';
+        this.hitEl.style.color = mode === 'white' ? '#fff' : DamageNumbers.colors[kind] || '#fff';
         this.hitT = kind === 'kill' ? 0.3 : 0.18;
     },
 

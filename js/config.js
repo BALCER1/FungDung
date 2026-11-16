@@ -12,7 +12,7 @@ const CONFIG = {
     sensitivity: 0.002,
     stages: 12,
     version: '1.0',
-    netVersion: 8,
+    netVersion: 9,
     coopEnemyCount: 0.3,
     coopEnemyDamage: 0.3,
     coopEnemyHealth: 0,
@@ -40,6 +40,16 @@ const CONFIG = {
     },
     god: {
         damage: 1000000
+    },
+    // Floating damage numbers (Settings > Display). Cosmetic only.
+    damageNumbers: {
+        life: 0.9,          // seconds a number stays up after its last hit
+        merge: 0.5,         // "Stacked": hits on the same enemy within this many seconds add up
+        rise: 46,           // pixels it floats up over its life
+        spread: 14,         // random sideways offset in pixels, so numbers do not sit on top of each other
+        size: 16,
+        bigSize: 21,        // crits and kills
+        max: 30
     },
     vending: {
         uses: 1,

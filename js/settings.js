@@ -15,6 +15,8 @@ const Settings = {
         lighting: 'high',
         particles: 'high',
         deathFx: 'full',
+        hitmarkers: 'color',
+        damageNumbers: 'off',
         showFps: false
     },
     choices: {
@@ -22,7 +24,9 @@ const Settings = {
         gunDetail: DETAIL.names,
         lighting: ['high', 'medium', 'low'],
         particles: ['high', 'medium', 'low'],
-        deathFx: ['full', 'simple']
+        deathFx: ['full', 'simple'],
+        hitmarkers: ['color', 'white', 'off'],
+        damageNumbers: ['off', 'stack', 'each']
     },
 
     init() {
@@ -50,6 +54,8 @@ const Settings = {
             lighting: $('setLighting'),
             particles: $('setParticles'),
             deathFx: $('setDeathFx'),
+            hitmarkers: $('setHitmarkers'),
+            damageNumbers: $('setDamageNumbers'),
             antialias: $('setAntialias'),
             aaNote: $('setAaNote'),
             showFps: $('setFps')

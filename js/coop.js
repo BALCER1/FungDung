@@ -261,7 +261,7 @@ const Coop = {
         Net.on('en', msg => this.enemiesFull(msg));
         Net.on('es', msg => this.enemiesTick(msg));
         Net.on('sh', (msg, from) => this.remoteShot(msg, from));
-        Net.on('hm', msg => Enemies.hitmark(String(msg.k)));
+        Net.on('hm', msg => this.hitReport(msg));
         Net.on('hurt', msg => this.hurt(msg));
         Enemies.remote = {
             fire: shot => {
@@ -584,14 +584,29 @@ const Coop = {
             origin.copy(by.eye);
         }
         const shot = {
-            weapon: String(msg.w), mode, origin, by, remote: true,
+            weapon: String(msg.w), mode, origin, by, remote: true, dealt: [],
             damage: Math.max(0, Math.min(+msg.d || 0, by.god ? CONFIG.god.damage : maxDamage)),
             dirs: new Array(Math.max(0, Math.min(msg.p | 0, maxPellets)))
         };
         const hits = Array.isArray(msg.h) ? msg.h.filter(Array.isArray).slice(0, Math.max(1, maxPellets)) : [];
         const kind = Enemies.remoteShot(shot, hits, Array.isArray(msg.n) ? vec(msg.n) : null, !!msg.f);
         if (kind) {
-            Net.sendTo(from, { t: 'hm', k: kind });
+            Net.sendTo(from, { t: 'hm', k: kind, d: shot.dealt });
+        }
+    },
+
+    // Host's answer to one of our shots: the best hit kind, and `d` = [enemy id, damage, x, y, z, kind]
+    // for each enemy it damaged.
+    hitReport(msg) {
+        Enemies.hitmark(String(msg.k));
+        if (!Array.isArray(msg.d)) {
+            return;
+        }
+        for (const d of msg.d.slice(0, 24)) {
+            if (Array.isArray(d)) {
+                const point = new THREE.Vector3(+d[2] || 0, +d[3] || 0, +d[4] || 0);
+                DamageNumbers.add(d[0], +d[1] || 0, point, String(d[5]));
+            }
         }
     },
 

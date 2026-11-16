@@ -956,6 +956,22 @@
           <option value="fullscreen">Fullscreen</option>
         </select>
       </div>
+      <div class="row">Hitmarkers
+        <select id="setHitmarkers">
+          <option value="color">Coloured</option>
+          <option value="white">White</option>
+          <option value="off">Off</option>
+        </select>
+      </div>
+      <div class="row">Damage numbers
+        <select id="setDamageNumbers">
+          <option value="off">Off</option>
+          <option value="stack">Stacked</option>
+          <option value="each">Every hit</option>
+        </select>
+      </div>
+      <p>Coloured hitmarkers show what you hit: grey shell, yellow plate break, green flesh, orange critical, red kill.</p>
+      <p>Damage numbers show how much health your hits took off, in the same colours. Stacked adds up quick hits on the same enemy into one number; Every hit shows each one. Damage to shell plates is not counted.</p>
       <p>Fullscreen is remembered between sessions. Tapping Esc only pauses; hold Esc to leave fullscreen.</p>
     </div>
 
@@ -1070,6 +1086,7 @@
 <script src="js/vitals.js"></script>
 <script src="js/players.js"></script>
 <script src="js/enemies/nav.js"></script>
+<script src="js/damage-numbers.js"></script>
 <script src="js/enemies/enemy-kit.js"></script>
 <script src="js/enemies/shellcap.js"></script>
 <script src="js/map.js"></script>

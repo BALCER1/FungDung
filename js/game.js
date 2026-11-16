@@ -322,6 +322,7 @@ const Game = {
         }
         if (this.room && this.state !== 'mapview' && this.state !== 'map') {
             Life.view(dt);
+            DamageNumbers.update(dt);
             Arsenal.render();
         }
         Perf.frame(interval, performance.now() - start);

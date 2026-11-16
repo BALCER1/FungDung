@@ -72,6 +72,7 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 | `js/weapons/arsenal.js` | `Arsenal`: local player's weapons, input, HUD, two-pass render |
 | `js/vitals.js` | `Vitals`: local player HP, damage flash, hit direction marks |
 | `js/players.js` | `Players`: list of player records (local one mirrors `Player`/`Vitals`/`Arsenal`), `Players.hurt` (the one damage function) |
+| `js/damage-numbers.js` | `DamageNumbers`: floating damage numbers for the local player's own hits (Settings > Display) |
 | `js/enemies/nav.js` | `NavGrid`: grid, A*, flow fields, line of sight |
 | `js/enemies/enemy-kit.js` | `Memory`, `Enemy`, `Pack`, `HiveMind`, `Enemies`, `CommFX`, `DevView` |
 | `js/enemies/shellcap.js` | `ShellcapKit`, `Shellcap` (model, damage, animation), `ShellcapMind` (AI) |
@@ -236,7 +237,8 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 - Guest shots: the guest finds its own hits and sends one `sh` per shot (weapon, mode, damage,
   pellet count, origin, list of enemy id + part id + point). The host clamps damage and pellet
   count to the weapon's stats, rebuilds the shot and runs it through the normal hit path
-  (`Enemies.remoteShot`), then replies `hm` with the hit marker kind.
+  (`Enemies.remoteShot`), then replies `hm` with the hit marker kind and `d`, the health taken off
+  each enemy (`Enemies.dealt` collects it on `shot.dealt`), which the guest shows as damage numbers.
 - Enemy hits on a guest: `Players.hurt` on the host calls `Players.onRemoteHurt`, which sends
   `hurt`. The guest applies it with `Players.applyLocal`.
 - Scaling: `Enemies.partySize` is set by `Coop.hostPick` and read once in `Enemies.load`. It sets
