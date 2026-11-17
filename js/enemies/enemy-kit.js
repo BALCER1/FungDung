@@ -1909,7 +1909,8 @@ const Enemies = {
         if (!this.nav) {
             return;
         }
-        const loud = { shotgun: 42, rifle: 34, pistols: 28, sniper: 58 }[shot.weapon] || 32;
+        const def = Weapons.get(shot.weapon);
+        const loud = (def && def.noise) || { shotgun: 42, rifle: 34, pistols: 28, sniper: 58 }[shot.weapon] || 32;
         const by = shot.by || Players.local;
         this.noise(by.pos, loud, 'shot', null, by);
     },

@@ -7,7 +7,9 @@ const SHELL_VS = {
     rifle: [1.0, 0.45, 1.1],
     pistols: [1.15, 0.5, 1.1],
     sniper: [1.1, 0.25, 0.5],
-    boomerang: [1.3, 0.45, 1]
+    boomerang: [1.3, 0.45, 1],
+    spear: [0.9, 0.5, 1.15],
+    hammer: [2.2, 0.6, 1]
 };
 const SC = {
     hip: 0.94, thigh: 0.5, shin: 0.5, upper: 0.5, fore: 0.52,

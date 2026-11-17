@@ -89,6 +89,16 @@ const Players = {
         return dmg;
     },
 
+    // Healing. HP lives on the player's own client, so only the local player can be healed here.
+    heal(p, amount) {
+        if (!p || !p.local || p.down || !(amount > 0)) {
+            return 0;
+        }
+        const before = Vitals.hp;
+        Vitals.heal(amount);
+        return Vitals.hp - before;
+    },
+
     applyLocal(dmg, o = {}) {
         if (Settings.god()) {
             return;

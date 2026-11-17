@@ -22,6 +22,11 @@ const Vitals = {
         hud.appendChild(vig);
         this.el.vig = vig;
 
+        const glow = document.createElement('div');
+        glow.style.cssText = 'position:fixed;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 55%,rgba(120,230,140,.45) 100%)';
+        hud.appendChild(glow);
+        this.el.glow = glow;
+
         const ring = document.createElement('div');
         ring.style.cssText = 'position:fixed;left:50%;top:50%;width:0;height:0;pointer-events:none';
         hud.appendChild(ring);
@@ -64,6 +69,7 @@ const Vitals = {
 
     heal(n) {
         this.hp = Math.min(this.max, this.hp + n);
+        this.healGlow = 1;
         this.draw();
     },
 
@@ -92,6 +98,8 @@ const Vitals = {
         const spectating = typeof Players !== 'undefined' && Players.local && Players.local.dead;
         const low = this.hp / this.max < 0.3 && !spectating ?0.25 + 0.1 * Math.sin(performance.now() / 160) : 0;
         this.el.vig.style.opacity = Math.max(this.flash, low).toFixed(3);
+        this.healGlow = Math.max(0, (this.healGlow || 0) - dt * 1.4);
+        this.el.glow.style.opacity = this.healGlow.toFixed(3);
         for (let i = this.marks.length - 1; i >= 0; i--) {
             const m = this.marks[i];
             m.t -= dt;

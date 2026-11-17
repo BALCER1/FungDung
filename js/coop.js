@@ -575,7 +575,8 @@ const Coop = {
         }
         const stats = Object.assign({ damage: 10, pellets: 1 }, def.stats);
         const mode = String(msg.m || '');
-        const maxDamage = mode === 'boomerang' ? (def.throwT ? def.throwT.damage : stats.damage)
+        const maxDamage = def.modeDamage && def.modeDamage[mode] ? def.modeDamage[mode]
+            : mode === 'boomerang' ? (def.throwT ? def.throwT.damage : stats.damage)
             : mode === 'charged' ? stats.damage * 2 : stats.damage;
         const maxPellets = mode === 'charged' ? stats.pellets + 7 : stats.pellets;
         const vec = a => new THREE.Vector3(+a[0] || 0, +a[1] || 0, +a[2] || 0);

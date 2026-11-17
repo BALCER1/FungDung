@@ -24,6 +24,8 @@ const Keys = {
             ['weapon2', 'Weapon 2', 'Digit2', 'Numpad2'],
             ['weapon3', 'Weapon 3', 'Digit3', 'Numpad3'],
             ['weapon4', 'Weapon 4', 'Digit4', 'Numpad4'],
+            ['weapon5', 'Weapon 5', 'Digit5', 'Numpad5'],
+            ['weapon6', 'Weapon 6', 'Digit6', 'Numpad6'],
             ['nextWeapon', 'Next weapon', 'WheelDown'],
             ['prevWeapon', 'Previous weapon', 'WheelUp']
         ]],

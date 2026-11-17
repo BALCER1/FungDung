@@ -56,7 +56,7 @@ const Arsenal = {
         };
         press('nextWeapon', () => cycle(1));
         press('prevWeapon', () => cycle(-1));
-        for (let n = 1; n <= 4; n++) {
+        for (let n = 1; n <= 6; n++) {
             press('weapon' + n, () => {
                 if (n <= Weapons.order.length) {
                     this.select(Weapons.order[n - 1]);
@@ -224,9 +224,9 @@ const Arsenal = {
         }
         this.hudEl.style.display = Players.local && Players.local.down ? 'none' : '';
         this.hud.name.textContent = w.name + (w.def.altName ? '  ·  RMB ' + w.def.altName : '');
-        this.hud.ammo.textContent = w.ammo;
-        this.hud.mag.textContent = '/ ' + w.stats.mag;
-        const charge = w.state === 'charge' ? w.data.charge : 0;
+        this.hud.ammo.textContent = w.melee ? '' : w.ammo;
+        this.hud.mag.textContent = w.melee ? (w.def.status ? w.def.status(w) : '') : '/ ' + w.stats.mag;
+        const charge = w.def.meter ? w.def.meter(w) : w.state === 'charge' ? w.data.charge : 0;
         this.hud.bar.style.width = (Math.max(w.reloadProgress, charge) * 100) + '%';
         this.hud.bar.style.background = '#' + new THREE.Color(w.def.color).getHexString();
     }

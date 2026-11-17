@@ -827,6 +827,11 @@ class Weapon {
         this.rig = new THREE.Group();
         this.root.add(this.rig);
 
+        // Melee weapons have no ammo or reload. `stats.hitDelay` holds the hit back until the
+        // swing connects (see `fire` / `release`).
+        this.melee = !!def.melee;
+        this.pending = null;
+
         this.data = {};
         this.hands = null;
         this.parts = def.build(this.b, this);
@@ -914,6 +919,9 @@ class Weapon {
         return this.state === 'inspect' ? this.actT : -1;
     }
     reload() {
+        if (this.melee) {
+            return false;
+        }
         if (this.state === 'inspect') {
             this.setState('ready');
         }
@@ -931,6 +939,7 @@ class Weapon {
         this.zoom = 0;
         this.steady = 0;
         this.spreadScale = 1;
+        this.pending = null;
         if (this.def.cancel) {
             this.def.cancel(this);
         }
@@ -1001,7 +1010,9 @@ class Weapon {
         this.lastSide = side;
         this.lastMode = o.mode || 'primary';
         this.lastFire = o;
-        this.ammo = Math.max(0, this.ammo - (o.ammo || 1));
+        if (!this.melee) {
+            this.ammo = Math.max(0, this.ammo - (o.ammo || 1));
+        }
         this.shots++;
         this.cooldown = o.cooldown !== undefined ? o.cooldown : 1 / this.stats.rate;
         this.buffer = 0;
@@ -1022,10 +1033,23 @@ class Weapon {
         if (this.def.onFire) {
             this.def.onFire(this, side, o);
         }
+        if (this.stats.hitDelay > 0) {
+            this.pending = { t: this.stats.hitDelay, side, o };
+            return;
+        }
+        this.release(side, o);
+    }
+
+    // Traces and reports the shot. Called by `fire`, or `stats.hitDelay` seconds later.
+    release(side, o) {
         const shot = this.makeShot(side, o);
         shot.fire = o;
         if (this.trace) {
             shot.hits = shot.dirs.map(d => this.trace(shot.origin, d, shot.range));
+        }
+        // Sees the traced hits before any damage is applied.
+        if (this.def.onTrace) {
+            this.def.onTrace(this, shot);
         }
         if (this.onShot) {
             this.onShot(shot);
@@ -1041,6 +1065,7 @@ class Weapon {
     }
 
     clearEffects() {
+        this.pending = null;
         if (this.def.cancel) {
             this.def.cancel(this);
         }
@@ -1107,15 +1132,23 @@ class Weapon {
         if (this.def.altTick) {
             this.def.altTick(this, dt, move);
         }
+        if (this.pending) {
+            this.pending.t -= dt;
+            if (this.pending.t <= 0) {
+                const p = this.pending;
+                this.pending = null;
+                this.release(p.side, p.o);
+            }
+        }
         if (wants && this.state === 'ready' && this.cooldown <= 0 && !move.sprinting) {
-            if (this.ammo > 0) {
-                this.fire();
+            if (this.melee || this.ammo > 0) {
+                this.fire(this.def.fireOpts ? this.def.fireOpts(this) : undefined);
             } else {
                 this.buffer = 0;
                 this.reload();
             }
         }
-        if (this.state === 'ready' && this.ammo <= 0 && this.cooldown <= 0) {
+        if (this.state === 'ready' && !this.melee && this.ammo <= 0 && this.cooldown <= 0) {
             this.reload();
         }
 
