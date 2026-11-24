@@ -215,7 +215,12 @@ const MapView = {
         this.buildAnim(opts.animate);
         this.running = true;
         this.last = performance.now();
-        requestAnimationFrame(this.frame);
+        // One draw loop at most: opening again while the old loop is still scheduled (closed and
+        // reopened in the same frame, or opened twice) reuses it instead of starting a second one.
+        if (!this.looping) {
+            this.looping = true;
+            requestAnimationFrame(this.frame);
+        }
     },
 
     close() {
@@ -297,6 +302,9 @@ const MapView = {
         if (t >= this.end) {
             return { ...k[k.length - 1].v };
         }
+        if (t <= 0) {
+            return { ...k[0].v };
+        }
         let i = 0;
         while (t > k[i + 1].t) {
             i++;
@@ -336,15 +344,20 @@ const MapView = {
 
     frame(now) {
         if (!this.running) {
+            this.looping = false;
             return;
         }
         if (!this.done) {
-            this.t += Math.min((now - this.last) / 1000, 0.05);
+            // A loop that was already scheduled can get a frame time from just before `open`.
+            this.t += Math.max(0, Math.min((now - this.last) / 1000, 0.05));
             this.cam = this.sample(this.t);
             this.done = this.t >= this.end;
         }
         this.last = now;
-        this.hint.textContent = this.done ? 'Drag to move - scroll to zoom' : 'Click or press any key to skip';
+        const hint = this.done ? 'Drag to move - scroll to zoom' : 'Click or press any key to skip';
+        if (this.hint.textContent !== hint) {
+            this.hint.textContent = hint;
+        }
         this.draw(now / 1000);
         requestAnimationFrame(this.frame);
     },

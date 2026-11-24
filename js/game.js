@@ -254,6 +254,7 @@ const Game = {
     },
 
     toMenu() {
+        MapView.close();
         Coop.end();
         if (Net.active) {
             Net.leave();
@@ -266,6 +267,7 @@ const Game = {
         const node = RunMap.current;
         const who = Coop.running ? 'The party was consumed' : 'Consumed';
         this.el.deadInfo.textContent = node ? `${who} on stage ${node.layer + 1} of ${RunMap.layers.length}.` : '';
+        MapView.close();
         this.setState('dead');
         document.exitPointerLock();
         this.unloadRoom();

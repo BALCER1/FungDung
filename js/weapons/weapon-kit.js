@@ -97,7 +97,6 @@ class WeaponBuilder {
         this.parts = [];
         this.grips = {};
         this.lod = lod || DETAIL.guns;
-        this.noLights = false;
     }
 
     n(count, min = 3) {
@@ -364,10 +363,10 @@ class WeaponBuilder {
         const core = this.mesh(geo, mat, g);
         const spike = this.mesh(geo, mat, g);
         core.visible = spike.visible = false;
+        // Not added to the scene: it only holds the flash's light settings. Arsenal copies them to
+        // its fixed muzzle light slots, so switching guns never changes the scene's light count
+        // (which would make three.js compile new shaders for every material).
         const light = new THREE.PointLight(color, 0, 2.5, 2);
-        if (DETAIL.lighting === 'high' && !this.noLights) {
-            g.add(light);
-        }
         return { group: g, core, spike, light, size, intensity, age: 9 };
     }
 }
@@ -819,7 +818,6 @@ class Weapon {
         this.lod = opts.lod || null;
         this.remote = !!opts.remote;
         this.b = new WeaponBuilder(this.lod);
-        this.b.noLights = this.remote;
         this.root = new THREE.Group();
         this.root.name = 'weapon:' + id;
         this.root.position.fromArray(def.offset || [0.2, -0.2, -0.42]);
@@ -1175,8 +1173,10 @@ class Weapon {
         this.syncBatch();
     }
 
+    // Merged into a few draw calls at every detail level (a gun is 95-295 meshes). Detail levels
+    // only change how finely the parts are modelled.
     syncBatch() {
-        const want = (this.lod || DETAIL.guns) !== 'high' && Batch.supported();
+        const want = Batch.supported();
         if (want && !this.batch) {
             this.batch = new MeshBatch(this.root, { skip: o => o.name === 'hands' });
         } else if (!want && this.batch) {
@@ -1368,6 +1368,15 @@ class WeaponView {
             mk(0xbfe4ff, 0.42, [1.6, 0.9, -1.8], [0.2, -0.2, -0.5]),
             mk(0xffe0b0, 0.08, [0, -1, -0.2], [0.1, 0, -0.5])
         ];
+        // Both passes share one light state in three.js r128. If their light counts differ, every
+        // lit material re-checks its shader twice a frame. These unlit stand-ins (world layer only)
+        // give the world pass the same number of directional lights as the gun pass.
+        this.pads = this.lights.map(() => {
+            const l = new THREE.DirectionalLight(0xffffff, 0);
+            l.layers.set(0);
+            c.add(l);
+            return l;
+        });
         return this.lights;
     }
     shareLights(scene) {

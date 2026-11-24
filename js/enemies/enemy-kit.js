@@ -136,14 +136,17 @@ class SporeCloud {
     }
     update(dt) {
         const { pos, vel, col, base, age, life, grav, drag } = this;
+        let live = false;
         for (let i = 0; i < this.cap; i++) {
             const j = i * 3;
             if (age[i] >= life[i]) {
                 if (col[j] || col[j + 1] || col[j + 2]) {
                     col[j] = col[j + 1] = col[j + 2] = 0;
+                    live = true;
                 }
                 continue;
             }
+            live = true;
             age[i] += dt;
             const k = Math.exp(-drag[i] * dt);
             vel[j] *= k;
@@ -157,6 +160,10 @@ class SporeCloud {
             col[j] = base[j] * fade;
             col[j + 1] = base[j + 1] * fade;
             col[j + 2] = base[j + 2] * fade;
+        }
+        // Nothing alive and nothing just cleared: the GPU copy is already up to date.
+        if (!live) {
+            return;
         }
         const a = this.points.geometry.attributes;
         a.position.needsUpdate = true;
@@ -334,8 +341,9 @@ class Enemy {
         return !(this.cd[name] > 0);
     }
 
+    // Merged into a few draw calls at every detail level (a Shellcap is 41 meshes).
     syncBatch() {
-        const want = DETAIL.enemies !== 'high' && Batch.supported();
+        const want = Batch.supported();
         if (want && !this.batch) {
             this.batch = new MeshBatch(this.root, { bounds: new THREE.Sphere(new THREE.Vector3(0, 1, 0), 2.5) });
         } else if (!want) {

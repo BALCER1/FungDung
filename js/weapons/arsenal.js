@@ -26,7 +26,9 @@ const Arsenal = {
             look(dx * k, dy * k);
         };
         this.buildWeapons();
+        this.setupMuzzleLights();
         this.makeHud();
+        this.cross = document.getElementById('cross');
         this.select(Weapons.order[0]);
 
         const playing = () => typeof Game !== 'undefined' && Game.state === 'playing' && !(Players.local && Players.local.down);
@@ -106,6 +108,7 @@ const Arsenal = {
         const id = this.current.id;
         this.current = null;
         this.buildWeapons();
+        this.setupMuzzleLights();
         for (const k in ammo) {
             this.weapons[k].ammo = ammo[k];
             this.weapons[k].reloadFrom = ammo[k];
@@ -157,11 +160,62 @@ const Arsenal = {
         Player.moveScale = m ? m.scale : 1;
         Player.noJump = !!(m && m.noJump);
         const z = this.scope.update(this.current, camera, CONFIG.fov);
-        const cross = document.getElementById('cross');
+        const cross = this.cross;
         if (cross) {
-            cross.hidden = z > 0.6 || Players.local.down;
+            const hide = z > 0.6 || Players.local.down;
+            if (cross.hidden !== hide) {
+                cross.hidden = hide;
+            }
         }
+        this.syncMuzzleLights();
         this.updateHud();
+    },
+
+    // Muzzle flash lights. A fixed number of point lights stays on the camera whatever gun is held
+    // (pistols have two flashes, the spear and hammer none), so switching guns or scoping in never
+    // changes the scene's light count. Each frame they copy the held gun's flash lights. Only with
+    // Lighting on High, as before.
+    setupMuzzleLights() {
+        for (const l of this.muzzleLights || []) {
+            camera.remove(l);
+            l.dispose();
+        }
+        this.muzzleLights = [];
+        if (DETAIL.lighting !== 'high') {
+            return;
+        }
+        let n = 0;
+        for (const id in this.weapons) {
+            n = Math.max(n, (this.weapons[id].parts.flashes || []).length);
+        }
+        for (let i = 0; i < n; i++) {
+            const l = new THREE.PointLight(0xffffff, 0, 2.5, 2);
+            l.layers.enable(0);
+            l.layers.enable(this.view.layer);
+            camera.add(l);
+            this.muzzleLights.push(l);
+        }
+    },
+
+    syncMuzzleLights() {
+        const w = this.current;
+        const flashes = w.parts.flashes || [];
+        // Hidden gun (scoped in): no flash light, as when the light lived inside the gun.
+        const shown = w.root.visible && w.root.parent === camera;
+        for (let i = 0; i < this.muzzleLights.length; i++) {
+            const slot = this.muzzleLights[i];
+            const f = flashes[i];
+            if (!shown || !f || !(f.light.intensity > 0)) {
+                slot.intensity = 0;
+                continue;
+            }
+            f.group.getWorldPosition(slot.position);
+            camera.worldToLocal(slot.position);
+            slot.color.copy(f.light.color);
+            slot.distance = f.light.distance;
+            slot.decay = f.light.decay;
+            slot.intensity = f.light.intensity;
+        }
     },
 
     render() {
@@ -234,17 +288,36 @@ const Arsenal = {
         if (!this.hud || !w) {
             return;
         }
-        this.hudEl.style.display = Players.local && Players.local.down ? 'none' : '';
-        this.hud.name.textContent = w.name + (w.def.altName ? '  ·  RMB ' + w.def.altName : '');
-        this.hud.ammo.textContent = w.melee ? '' : w.ammo;
-        this.hud.mag.textContent = w.melee ? (w.def.status ? w.def.status(w) : '') : '/ ' + w.stats.mag;
+        // Every write is skipped when nothing changed: setting text forces the page to lay out again.
+        const h = this.hud;
+        const put = (key, el, value) => {
+            if (h['_' + key] !== value) {
+                h['_' + key] = value;
+                el.textContent = value;
+            }
+        };
+        const display = Players.local && Players.local.down ? 'none' : '';
+        if (h._display !== display) {
+            h._display = display;
+            this.hudEl.style.display = display;
+        }
+        put('name', h.name, w.name + (w.def.altName ? '  ·  RMB ' + w.def.altName : ''));
+        put('ammo', h.ammo, w.melee ? '' : String(w.ammo));
+        put('mag', h.mag, w.melee ? (w.def.status ? w.def.status(w) : '') : '/ ' + w.stats.mag);
         const guard = !!(w.def.damageTaken && w.def.damageTaken(w) < 1);
-        if (guard !== this.hud.guardShown) {
-            this.hud.guardShown = guard;
-            this.hud.guard.style.display = guard ? 'inline' : 'none';
+        if (guard !== h.guardShown) {
+            h.guardShown = guard;
+            h.guard.style.display = guard ? 'inline' : 'none';
         }
         const charge = w.def.meter ? w.def.meter(w) : w.state === 'charge' ? w.data.charge : 0;
-        this.hud.bar.style.width = (Math.max(w.reloadProgress, charge) * 100) + '%';
-        this.hud.bar.style.background = '#' + new THREE.Color(w.def.color).getHexString();
+        const width = (Math.max(w.reloadProgress, charge) * 100).toFixed(1) + '%';
+        if (h._width !== width) {
+            h._width = width;
+            h.bar.style.width = width;
+        }
+        if (h._color !== w.def.color) {
+            h._color = w.def.color;
+            h.bar.style.background = '#' + new THREE.Color(w.def.color).getHexString();
+        }
     }
 };
