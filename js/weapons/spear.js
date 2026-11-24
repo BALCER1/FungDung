@@ -26,7 +26,7 @@ Weapons.register('spear', {
     // hits: lifesteal pokes a regrown spear carries, heal: HP per hit.
     lifesteal: { hits: 3, heal: 5 },
     color: 0xff8f84,
-    inspect: { time: 3.4 },
+    inspect: { time: 3.6 },
     hands: { left: 'front', right: 'rear' },
     // Left hand pointing ahead while the right hand throws (rig space).
     LEFT_AIM: { p: [-0.37, 0.03, -0.24], fingers: [0.25, 0.35, -1], back: [-0.35, 0.9, 0.25], curl: 0.3 },
@@ -249,6 +249,8 @@ Weapons.register('spear', {
         const rear = b.grip('rear', model, [0, 0, 0.08], { fingers: [-1, 0.25, 0], back: [0.25, 1, 0], around: R + 0.002, curl: 0.95 });
         const front = b.part(b.grip('front', model, [0, 0, -0.25], { fingers: [1, 0.3, 0], back: [0.3, -1, 0], around: R + 0.002, curl: 0.85 }));
         b.grip('reach', model, [0, 0, -0.53], { fingers: [1, 0.3, 0], back: [0.3, -1, 0], around: R + 0.002, curl: 0.8 });
+        // Open hand on the root binding below the socket, for the inspect.
+        b.grip('stroke', model, [0, 0, -0.6], { fingers: [1, 0.3, 0], back: [0.3, -1, 0], around: R + 0.006, curl: 0.3 });
         return { model, body, veins, web, blade, guard, tip, muzzle, rear, front, shrooms, tendrils, nodes, hairs, m };
     },
 
@@ -328,7 +330,19 @@ Weapons.register('spear', {
             const T = this.throwCfg;
             return K.seg(w.actT, 0, 0.7) * (1 - K.e('inOutSine', w.actT, T.regrow - 0.45, T.regrow));
         }
+        if (w.state === 'inspect') {
+            // The sheath follows the hand up the shaft, then withers.
+            return K.e('outCubic', w.actT, 0.75, 1.6) * (1 - K.e('inOutSine', w.actT, 1.85, 2.4));
+        }
         return 0;
+    },
+
+    // Inspect: raise the spear in front, run the free hand up the shaft (the mycelium sheath grows
+    // after it and the wood glows), turn the blade to the light (a glint runs up the edge), then
+    // spin it in the hands, flinging spores off the mushrooms, and lower it.
+    inspectRoll(it) {
+        const K = WeaponKit;
+        return 1.3 * K.e('inOutCubic', it, 1.9, 2.3) + (Math.PI * 2 - 1.3) * K.e('inOutCubic', it, 2.6, 3.1);
     },
 
     init(w) {
@@ -801,16 +815,21 @@ Weapons.register('spear', {
         const it = w.inspectT;
         if (it >= 0) {
             const IT = this.inspect.time;
-            const env = K.e('inOutCubic', it, 0, 0.6) * (1 - K.e('inOutCubic', it, IT - 0.6, IT));
-            M.rotation.y += env * 0.5;
-            M.rotation.x += env * 0.1;
-            M.position.x += env * 0.17;
-            M.position.y += env * 0.05;
-            M.position.z -= env * 0.04;
-            const roll = 1.25 * K.e('inOutCubic', it, 0.7, 1.35) - 2.5 * K.e('inOutCubic', it, 1.55, 2.3) + 1.25 * K.e('inOutCubic', it, 2.45, 2.85);
-            M.rotation.z += roll;
-            M.rotation.x += K.hump(it, 2.3, 2.6) * 0.07;
-            if (w.atAct(2.35)) {
+            const up = K.e('inOutCubic', it, 0, 0.55) * (1 - K.e('inOutCubic', it, IT - 0.5, IT));
+            const check = K.hump(it, 1.85, 2.6);
+            M.rotation.x += up * 0.6 - check * 0.12;
+            M.rotation.y += up * 0.22 + check * 0.3;
+            M.rotation.z -= up * 0.1;
+            M.position.x -= up * 0.12;
+            M.position.y -= up * 0.05;
+            M.position.z -= up * 0.05;
+            // The spear turns in the hands (the grips stay put): blade to the light, then a full spin.
+            const roll = this.inspectRoll(it);
+            P.body.rotation.z += roll;
+            P.veins.rotation.z += roll;
+            M.position.y += K.hump(it, 2.6, 3.1) * 0.015;
+            P.m.wood.emissiveIntensity = Math.max(P.m.wood.emissiveIntensity, 0.75 * K.hump(it, 0.7, 1.9));
+            if (w.atAct(0.55) || w.atAct(3.1)) {
                 d.jiggle.kick(9);
             }
         }
@@ -838,7 +857,10 @@ Weapons.register('spear', {
         }
         const it = w.inspectT;
         if (it >= 0) {
-            H.left.track(it, [[0.25, 0.6, 'reach'], [2.5, 2.9, 'front']]);
+            // The free hand opens and slides up the shaft to the roots, then back to its grip.
+            H.left.track(it, [[0.65, 1.55, 'stroke'], [1.75, 2.2, 'front']]);
+            H.left.squeeze(-0.55 * K.hump(it, 0.6, 1.9));
+            H.right.squeeze(0.15 * K.hump(it, 2.55, 3.15));
         }
     },
 
@@ -942,10 +964,39 @@ Weapons.register('spear', {
             }
         }
         const it = w.inspectT;
-        if (it >= 0 && w.atAct(2.4)) {
-            const p = w.localPos(P.shrooms[0], [0, 0.02, 0]);
-            for (let i = 0; i < 10; i++) {
-                fx.emit({ pos: p, vel: K.sphereDir().multiplyScalar(0.06).add(new THREE.Vector3(0, 0.08, 0)), life: K.rand(0.7, 1.2), size: 0.003, sizeEnd: 0.009, color: i % 3 ? 0xf2c4bc : glow, additive: i % 3 === 0, opacity: 0.5, drag: 2 });
+        if (it >= 0) {
+            // Motes trailing the stroking hand.
+            if (it > 0.7 && it < 1.6) {
+                const z = K.lerp(-0.25, -0.6, K.e('inOutCubic', it, 0.65, 1.55));
+                const p = w.localPos(P.model, [0, 0, z]);
+                const n = fx.rate('stroke', 45, dt);
+                for (let i = 0; i < n; i++) {
+                    fx.emit({ pos: p.clone().add(K.sphereDir().multiplyScalar(0.02)), vel: K.sphereDir().multiplyScalar(0.03).add(new THREE.Vector3(0, 0.03, 0)), life: K.rand(0.4, 0.8), size: K.rand(0.002, 0.004), sizeEnd: 0.001, color: Math.random() < 0.7 ? glow : 0xffffff, drag: 2, fadeIn: 0.05 });
+                }
+            }
+            // A glint running up the turned blade's edge.
+            if (it > 2.0 && it < 2.4) {
+                const d2 = K.seg(it, 2.0, 2.4) * 0.28 + 0.02;
+                const s = Math.sin(it * 40) > 0 ? 1 : -1;
+                const p = w.localPos(P.blade, [s * this.bladeR(d2), 0, -d2]);
+                const n = fx.rate('glint', 70, dt);
+                for (let i = 0; i < n; i++) {
+                    fx.emit({ pos: p, vel: K.sphereDir().multiplyScalar(0.02), life: 0.18, size: 0.006, sizeEnd: 0, color: 0xffffff, drag: 4 });
+                }
+            }
+            // The spin flings spores off the mushrooms.
+            if (it > 2.75 && it < 3.05) {
+                const n = fx.rate('fling', 60, dt);
+                for (let i = 0; i < n; i++) {
+                    const sh = P.shrooms[(Math.random() * P.shrooms.length) | 0];
+                    const p = w.localPos(sh, [0, 0.01, 0]);
+                    const out = p.clone().sub(w.localPos(P.model, [0, 0, -0.4])).setZ(0);
+                    if (out.lengthSq() < 1e-8) {
+                        out.set(0, 1, 0);
+                    }
+                    out.normalize().multiplyScalar(K.rand(0.1, 0.25));
+                    fx.emit({ pos: p, vel: out.add(K.sphereDir().multiplyScalar(0.03)), life: K.rand(0.5, 0.9), size: 0.003, sizeEnd: 0.008, color: i % 3 ? 0xf2c4bc : glow, additive: i % 3 === 0, opacity: 0.55, drag: 2.5 });
+                }
             }
         }
     }

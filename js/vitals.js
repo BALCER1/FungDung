@@ -22,6 +22,12 @@ const Vitals = {
         hud.appendChild(vig);
         this.el.vig = vig;
 
+        // Hits softened by a guard (the hammer) flash steel-blue instead of the full red.
+        const guard = document.createElement('div');
+        guard.style.cssText = 'position:fixed;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 50%,rgba(120,170,205,.7) 100%)';
+        hud.appendChild(guard);
+        this.el.guard = guard;
+
         const glow = document.createElement('div');
         glow.style.cssText = 'position:fixed;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 55%,rgba(120,230,140,.45) 100%)';
         hud.appendChild(glow);
@@ -38,6 +44,7 @@ const Vitals = {
         this.hp = this.max;
         this.dead = false;
         this.flash = 0;
+        this.guardFlash = 0;
         for (const m of this.marks) {
             m.el.remove();
         }
@@ -45,12 +52,17 @@ const Vitals = {
         this.draw();
     },
 
-    hurt(n, from) {
+    hurt(n, from, reduced) {
         if (this.dead) {
             return;
         }
         this.hp = Math.max(0, this.hp - n);
-        this.flash = Math.min(1, this.flash + 0.3 + n / 40);
+        if (reduced) {
+            this.flash = Math.min(1, this.flash + 0.12 + n / 80);
+            this.guardFlash = 1;
+        } else {
+            this.flash = Math.min(1, this.flash + 0.3 + n / 40);
+        }
         if (from) {
             this.indicate(from);
         }
@@ -100,6 +112,8 @@ const Vitals = {
         this.el.vig.style.opacity = Math.max(this.flash, low).toFixed(3);
         this.healGlow = Math.max(0, (this.healGlow || 0) - dt * 1.4);
         this.el.glow.style.opacity = this.healGlow.toFixed(3);
+        this.guardFlash = Math.max(0, (this.guardFlash || 0) - dt * 2.6);
+        this.el.guard.style.opacity = this.guardFlash.toFixed(3);
         for (let i = this.marks.length - 1; i >= 0; i--) {
             const m = this.marks[i];
             m.t -= dt;

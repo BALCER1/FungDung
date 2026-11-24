@@ -818,6 +818,16 @@ class Shellcap extends Enemy {
         }
     }
 
+    // Landed after being launched (hammer): a short stagger, then the mind takes over again.
+    afterLaunch(a) {
+        const dur = a.stun || 0.4;
+        this.staggerT = Math.max(this.staggerT, dur);
+        if (a.dir) {
+            this.kick(0.35, a.dir);
+        }
+        this.action = { name: 'stagger', t: 0, dur, k: clamp01(dur / 0.8), lock: true };
+    }
+
     flashMesh(m) {
         const M = ShellcapKit.mat;
         if (!m || !m.isMesh || !m.userData.base || m.parent === Enemies.junk) {
@@ -2087,6 +2097,26 @@ class Shellcap extends Enemy {
                     T.shR[s] = 0.55;
                     T.shY[s] = -0.15;
                     T.elb[s] = -0.45;
+                    T.ftw[s] = 0.3;
+                }
+                break;
+            }
+            case 'launched': {
+                // Thrown by a hammer: arched back while rising, tucked and flailing on the way down.
+                const rise = clampN(this.vel.y / 6, -1, 1);
+                T.gal = 0;
+                T.tuck = 0.55 + 0.35 * Math.max(0, -rise);
+                T.lean = 0.3 - 0.4 * rise;
+                T.headP = -0.25 - 0.45 * rise;
+                T.jaw = 0.9;
+                T.roll = 0.35 * Math.sin(a.t * 7 + this.seed);
+                T.twist = 0.25 * Math.sin(a.t * 5.3 + this.seed);
+                for (let s = 0; s < 2; s++) {
+                    const flail = Math.sin(a.t * 13 + s * 2.4 + this.seed);
+                    T.shP[s] = -1.25 + 0.5 * flail;
+                    T.shR[s] = 0.8 + 0.2 * flail;
+                    T.shY[s] = 0.2;
+                    T.elb[s] = -0.7 + 0.35 * flail;
                     T.ftw[s] = 0.3;
                 }
                 break;

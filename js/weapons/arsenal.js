@@ -9,6 +9,7 @@ const Arsenal = {
     onFire: null,
     onShotEnd: null,
     onLocalShot: null,
+    onLocalSwing: null,
     firing: false,
 
     init() {
@@ -81,7 +82,12 @@ const Arsenal = {
             const w = new Weapon(id, {
                 worldParent: scene,
                 trace: (origin, dir, range) => this.trace(origin, dir, range),
-                onShot: shot => this.shoot(shot)
+                onShot: shot => this.shoot(shot),
+                onSwing: (weapon, o) => {
+                    if (this.onLocalSwing) {
+                        this.onLocalSwing(weapon, o);
+                    }
+                }
             });
             this.view.attach(w);
             this.weapons[id] = w;
@@ -147,6 +153,9 @@ const Arsenal = {
             sprinting: Keys.held('sprint') && moving && speed > CONFIG.walk + 0.5,
             grounded: Player.onGround
         });
+        const m = this.current.def.move ? this.current.def.move(this.current) : null;
+        Player.moveScale = m ? m.scale : 1;
+        Player.noJump = !!(m && m.noJump);
         const z = this.scope.update(this.current, camera, CONFIG.fov);
         const cross = document.getElementById('cross');
         if (cross) {
@@ -205,7 +214,9 @@ const Arsenal = {
         const hud = document.getElementById('hud');
         const el = document.createElement('div');
         el.style.cssText = 'position:fixed;right:16px;bottom:14px;text-align:right;color:#fff;font:600 14px system-ui,sans-serif;text-shadow:0 1px 3px #000a';
-        el.innerHTML = '<div data-n style="opacity:.8"></div><div><span data-a style="font-size:30px"></span> <span data-m style="opacity:.6"></span></div>' +
+        const shield = '<svg data-g viewBox="0 0 16 18" style="width:13px;height:15px;vertical-align:-2px;margin-right:5px;display:none">' +
+            '<path d="M8 1 L15 4 V9 C15 13 12 16 8 17 C4 16 1 13 1 9 V4 Z" fill="#9fc3d8" fill-opacity=".35" stroke="#cfe6f2" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+        el.innerHTML = '<div data-n style="opacity:.8"></div><div><span data-a style="font-size:30px"></span> ' + shield + '<span data-m style="opacity:.6"></span></div>' +
             '<div style="height:3px;background:#fff3;margin-top:4px"><i data-r style="display:block;height:100%;width:0"></i></div>';
         (hud || document.body).appendChild(el);
         this.hudEl = el;
@@ -213,6 +224,7 @@ const Arsenal = {
             name: el.querySelector('[data-n]'),
             ammo: el.querySelector('[data-a]'),
             mag: el.querySelector('[data-m]'),
+            guard: el.querySelector('[data-g]'),
             bar: el.querySelector('[data-r]')
         };
     },
@@ -226,6 +238,11 @@ const Arsenal = {
         this.hud.name.textContent = w.name + (w.def.altName ? '  ·  RMB ' + w.def.altName : '');
         this.hud.ammo.textContent = w.melee ? '' : w.ammo;
         this.hud.mag.textContent = w.melee ? (w.def.status ? w.def.status(w) : '') : '/ ' + w.stats.mag;
+        const guard = !!(w.def.damageTaken && w.def.damageTaken(w) < 1);
+        if (guard !== this.hud.guardShown) {
+            this.hud.guardShown = guard;
+            this.hud.guard.style.display = guard ? 'inline' : 'none';
+        }
         const charge = w.def.meter ? w.def.meter(w) : w.state === 'charge' ? w.data.charge : 0;
         this.hud.bar.style.width = (Math.max(w.reloadProgress, charge) * 100) + '%';
         this.hud.bar.style.background = '#' + new THREE.Color(w.def.color).getHexString();

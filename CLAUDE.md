@@ -67,7 +67,8 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 | `js/rooms/room-kit.js` | `Rooms` registry, `Door`, `RoomKit` (procedural room pieces) |
 | `js/rooms/*.js` | One `Rooms.register(type, { build(b, node) })` per room type |
 | `js/weapons/weapon-kit.js` | `WeaponKit`, `WeaponBuilder`, `SporeFX`, `SporeProjectiles`, `Weapon`, `WeaponView`, `ScopeOverlay`, `Weapons` registry |
-| `js/weapons/{shotgun,rifle,sniper,pistols}.js` | One `Weapons.register(id, def)` each: model, pose, hand pose, effects |
+| `js/weapons/ground-fx.js` | `GroundFX`: slam effects (purple shockwave, radius flash and edge ring, sparks, floor-coloured debris, dust, crack decal with glowing cracks), floor colour sampling |
+| `js/weapons/{shotgun,rifle,sniper,pistols,spear,hammer}.js` | One `Weapons.register(id, def)` each: model, pose, hand pose, effects |
 | `js/hands.js` | `HandKit`, `HandShapes`, `Hand`, `Hands` (grip-driven hands) |
 | `js/weapons/arsenal.js` | `Arsenal`: local player's weapons, input, HUD, two-pass render |
 | `js/vitals.js` | `Vitals`: local player HP, damage flash, hit direction marks |
@@ -87,8 +88,8 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 
 - Global names are shared across files. Already taken: `rand`, `randInt` (map.js), `GRAV`,
   `clamp01`, `clampN`, `wrapAngle`, and scratch objects `_ev`, `_ev2`, `_sv`, `_sv2`, `_wv`, `_wq`,
-  `_hp`, `_hq`, `_hs`, `_hm`, `_bm`, `_bn`, `_bv`, `_ik`, `_qa`, `_qb`, `_qf`, `_eu`. A new file
-  that declares one of these with `const` breaks the page.
+  `_hp`, `_hq`, `_hs`, `_hm`, `_bm`, `_bn`, `_bv`, `_ik`, `_qa`, `_qb`, `_qf`, `_eu`, `_gfv`, `_gfv2`,
+  `_gfq`, `_gfm`, `_gfs`, `_gfc`. A new file that declares one of these with `const` breaks the page.
 - `Game.state` is both "which screen is showing" and "is the simulation running". In singleplayer
   the sim only ticks in `'playing'`, and losing pointer lock sets `'paused'`. While `Coop.running`
   it also ticks in `Game.liveStates` (paused, options, mapview, entering, map), with `Input.keys`
@@ -96,7 +97,13 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 - `Game.present` says whether the local player is physically in the loaded room. A co-op host on
   the waiting map has a room loaded but is not present. `Game.roomKey` is `'layer:index'`.
 - Headless Chrome cannot take pointer lock, so `enterRoom` ends in `'paused'` there. Tests set
-  `'playing'` by hand.
+  `'playing'` by hand, and again after the pointer-lock error lands (keep re-setting it), and call
+  `Intro.finish()` first or the intro covers screenshots. SwiftShader runs at about 10 fps and `dt`
+  is capped at 0.05, so wait on weapon time (`prevFireT` / `prevActT`, which is what the pose
+  used) rather than wall-clock sleeps, and freeze with `Game.state = 'paused'` before a screenshot.
+- `Player.moveScale` and `Player.noJump` are set every frame by `Arsenal.update` from the held
+  weapon's `def.move(w)` (1 and false when it has none). Movement code that changes speed must
+  multiply by `moveScale`, not overwrite it.
 - First-person guns render in a second pass: `WeaponView` uses its own 55 degree camera that sees
   only layer 1. A `Weapon` that is never passed to `WeaponView.attach` stays on layer 0 and renders
   as a normal world object.
@@ -244,6 +251,90 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 - Scaling: `Enemies.partySize` is set by `Coop.hostPick` and read once in `Enemies.load`. It sets
   `Enemies.countScale`, `Enemies.healthScale` and `Players.damageScale` for that room, from
   `CONFIG.coopEnemyCount`, `CONFIG.coopEnemyHealth` and `CONFIG.coopEnemyDamage`.
+
+## Carapace Maul (hammer)
+
+`js/weapons/hammer.js`, a living beetle-shell hammer. Tunables are in the def: `guard`, `swipe`,
+`slam`, `air`, `stats` and `modeDamage`.
+
+- Damage reduction: `def.damageTaken(w)` returns 0.7 while the hammer is out and not in `'draw'`.
+  It is applied in `Players.applyLocal`, the one place local HP changes for singleplayer, the host
+  and guests (the `hurt` message ends there too), after `damageScale` and once per hit. It uses the
+  weapon this client really holds right now. `Vitals.hurt(n, from, reduced)` then flashes
+  steel-blue, `def.guarded` makes the hammer brace, and Arsenal shows a shield icon when
+  `damageTaken < 1`.
+- Swipe (LMB): `fireOpts` alternates `mode` `swipeL` (forehand, sweeping left, face leading) and
+  `swipeR` (backhand, mandibles leading), resetting after `swipe.combo` idle seconds. `onTrace`
+  replaces the single crosshair trace with `swipeHits`: every live enemy in `Enemies.list` within
+  `range` and the arc, nearest first, at most `maxTargets`, each once. The enemy under the
+  crosshair keeps the crosshair hit (so heads still crit); others get `losHit` rays at torso, head
+  and legs. `rayTo` uses `Arsenal.ray` on `Game.room.group` and skips other enemies but stops at
+  walls. Hits cause a short hit stop (`w.timeScale`) and `Enemies.shake`.
+- Slam (RMB, buffered 0.3 s): its own weapon states `'slam'` and `'slamAir'`, not `fire()`. It
+  starts a cooldown at once, so switching weapons mid-slam still spends it. On impact
+  `impactPoint` takes `reach` ahead (less before a wall) and runs `GroundFX.sample` down to the
+  surface. `slamHits` finds enemies within the radius with line of sight from 0.5 m above the
+  impact. The holder's copy sends one shot through `w.onShot`. The shot has `mode` `slam` or
+  `slamAir`, `origin` = impact, `aim` and `power` (air bonus 0..1).
+- Air slam: RMB while airborne. A short hang, then the local player is driven down at
+  `air.speed` (it writes `Player.vel`, local copy only). It lands on touchdown with
+  `power = (peak - floor - minDrop) / (fullDrop - minDrop)`.
+- Per-enemy numbers are only worked out on the host: `Enemies.applyHit` calls
+  `def.shapeHit(shot, e, hit)` (via `Enemies.shapeHit`) for `scale` (damage multiplier, the slam
+  falloff and air bonus), `push` (launch velocity) and `stun`. It then calls `e.launch(push, stun)`.
+- Launching (any enemy): `Enemy.launch(vel, stun)` sets an `air` + `lock` action named
+  `'launched'`, so minds leave it alone like a leap. On landing `Enemy.update` calls
+  `afterLaunch(a)`; Shellcap turns it into its normal `'stagger'` action. Puppets get the action
+  through the usual `a` events and predict airborne positions along a falling arc in
+  `puppetUpdate`. Shellcap has a `'launched'` pose (arched, then tucked and flailing).
+- Floor colour: `GroundFX.sample` raycasts straight down on `Game.room.group` with its own
+  raycaster (BATCH_LAYER off, so batched enemy meshes are skipped), ignores meshes under
+  `Enemies.group` or with `userData.enemy`, and takes the first upward-facing surface's
+  `material.color`. That is the floor deco, a raised platform, stairs, a mound or a crate top.
+  Room boxes are never batched, so the colour is the material's. A box top also gives a footprint
+  so the crack decal is clamped to fit on it.
+- `GroundFX` is pooled and parented to `scene`. Chunks are one `InstancedMesh` (96 slots,
+  per-instance colour), dust is one `Points` with a small shader, rings and decals are pooled.
+  The debris, dust and crack take the floor colour; the shockwave, the radius flash, the edge ring
+  at the radius (lit when the wave arrives), the sparks (`Enemies.fx`) and the crack glow use
+  `o.glow` (the hammer's `slamColor`, purple). Rings and the flash use normal blending so the
+  purple holds on any floor colour; the crack glow is additive.
+  The ring walks out per angle over `room.colliders` at spawn time, recording floor height and
+  stopping at anything taller than a step, so it hugs steps and stops at walls and room edges.
+  Counts follow `DETAIL.particles` / `DETAIL.skip()` and ring segments follow `DETAIL.seg`.
+  `GroundFX.update` runs in the game loop and `GroundFX.clear` runs in `Game.unloadRoom`.
+- Co-op:
+  - `def.replayAtSwing` makes `Weapon.fire` call `opts.onSwing` (Arsenal -> `Coop.localSwing`) so
+    the fire event goes out when the swing starts. The released shot is marked `early` and
+    `Coop.localShot` skips it.
+  - The slam's fire event is sent at impact; `ev[6]` (`lastCharge`) carries `power`.
+  - `Avatar.fire` hands the event to `def.replay(w, o)`. Swipes replay as `w.fire(o)`. Slam states
+    arrive through `wstate`; a ground slam lands on its own timing, an air slam lands on the event.
+    Every client spawns its own `GroundFX` and shake from its copy (cosmetic differences are fine).
+  - Guests send `sh` with the new fields `a` (aim) and `k` (power) for weapons with
+    `def.validate`. On the host, `Coop.remoteShot` uses `def.originReach` (the slam origin is the
+    impact point), `def.maxHits(mode)` and `def.validate(shot, hits, by)`.
+  - The hammer's `validate` checks:
+    - Swipe: the aim within ~43 degrees of the host's view of the guest, no faster than about half
+      the swing time, and each enemy within range + 1 m and inside the arc + 15 degrees.
+    - Slam: the cooldown (x0.85), the impact within reach + 1.5 m (+1.5 m for air), and line of
+      sight from the impact on the host.
+    - Air slam: `power` capped from `by.peakY` (highest position the host saw in the last 2.5 s,
+      kept in `Coop.apply`).
+  - `CONFIG.netVersion` is 11.
+- Model: the head is a `head` group (squash) holding `fleshG` (core and veins, bulges), five
+  pairs of shell plates hinged on the dorsal ridge (`rotation.z` opens them like wing cases,
+  `rotation.x` lifts them), belly scutes, the striking face (-z), crown, mandibles, antennae and
+  legs (+z end and underneath). Grips `lower` and `upper` are on the handle, far below the head.
+  The poses set `body.position` / `body.quaternion` absolutely from `swingPose` / `slamPose`
+  (basis built from the handle and face directions, in the weapon root's space) and blend from the
+  pose captured when the swing started (`d.fromP` / `d.fromQ`). At rest it is held like a normal
+  hammer (`REST_UP` / `REST_FACE`: handle up, face ahead). The swipe is a long sweep of the area:
+  `handPose` slides both hands to the end of the handle (grips `endLow` / `endHigh`, weight kept
+  in `d.handK` so a combo does not snap them back), the arms stretch out to full `reach`, and the
+  head travels a wide arc that crosses the middle of the view at `hitDelay`, kept level on
+  screen a little below the crosshair (`SWIPE_Y`; `levelE` raises it at the sides, where it is closer). It kicks
+  `swayX` / `recoilR` so the view turns with it.
 
 ## Seeded randomness
 

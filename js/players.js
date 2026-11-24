@@ -99,11 +99,25 @@ const Players = {
         return Vitals.hp - before;
     },
 
+    // Every hit on the local player lands here exactly once: singleplayer, the host's own player
+    // (from `hurt`) and a guest (from the host's `hurt` message), after `damageScale`. So the held
+    // weapon's damage reduction (`def.damageTaken`, e.g. the hammer's guard) is applied here and
+    // only here, from the weapon this client is really holding right now.
     applyLocal(dmg, o = {}) {
         if (Settings.god()) {
             return;
         }
-        Vitals.hurt(dmg, o.from);
+        const w = typeof Arsenal !== 'undefined' ? Arsenal.current : null;
+        const k = w && w.def.damageTaken ? w.def.damageTaken(w) : 1;
+        let reduced = false;
+        if (k < 1 && dmg > 0) {
+            dmg = Math.max(1, Math.round(dmg * k));
+            reduced = true;
+            if (w.def.guarded) {
+                w.def.guarded(w, dmg);
+            }
+        }
+        Vitals.hurt(dmg, o.from, reduced);
         const d = o.dir;
         if (d && o.knock) {
             Player.knock(d, o.knock, o.stun || 0);

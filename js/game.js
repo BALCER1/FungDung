@@ -222,6 +222,7 @@ const Game = {
 
     unloadRoom() {
         Enemies.clear();
+        GroundFX.clear();
         this.roomKey = '';
         this.present = false;
         if (this.room) {
@@ -314,6 +315,7 @@ const Game = {
             Enemies.update(dt);
             this.updateRoom(dt);
             Arsenal.update(dt);
+            GroundFX.update(dt);
             Vitals.update(dt);
             Life.update(dt);
         }

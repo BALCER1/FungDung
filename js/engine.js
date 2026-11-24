@@ -110,8 +110,15 @@ const Player = {
         this.stun = 0;
         this.crouching = false;
         this.crouchK = 0;
+        this.moveScale = 1;
+        this.noJump = false;
         this.syncCamera();
     },
+
+    // Set every frame by Arsenal from the held weapon (`def.move`), e.g. a hammer slam that commits
+    // you. 1 and false for every weapon that does not ask for it.
+    moveScale: 1,
+    noJump: false,
 
     // Crouch lowers the camera only. The collision box stays full height, so crouching never
     // lets you squeeze under anything and standing up can never get stuck.
@@ -189,7 +196,7 @@ const Player = {
         const str = (Keys.held('right') ? 1 : 0) - (Keys.held('left') ? 1 : 0);
         this.crouching = Keys.held('crouch');
         this.crouchK += ((this.crouching ? 1 : 0) - this.crouchK) * (1 - Math.exp(-CONFIG.crouch.rate * dt));
-        const speed = this.crouching ? CONFIG.crouch.speed : Keys.held('sprint') ? CONFIG.sprint : CONFIG.walk;
+        const speed = (this.crouching ? CONFIG.crouch.speed : Keys.held('sprint') ? CONFIG.sprint : CONFIG.walk) * this.moveScale;
 
         const sin = Math.sin(this.yaw);
         const cos = Math.cos(this.yaw);
@@ -212,7 +219,7 @@ const Player = {
         this.vel.x += (wx - this.vel.x) * t;
         this.vel.z += (wz - this.vel.z) * t;
 
-        if (Keys.held('jump') && this.onGround) {
+        if (Keys.held('jump') && this.onGround && !this.noJump) {
             this.vel.y = CONFIG.jump;
             this.onGround = false;
         }

@@ -115,6 +115,11 @@ class Avatar {
             o.projectile = w.def[ev[5]];
         }
         w.data.lastCharge = ev[6] || 0;
+        // A weapon with its own replay (the hammer) decides how a fire event drives its copy.
+        if (w.def.replay) {
+            w.def.replay(w, o);
+            return;
+        }
         if (w.state !== 'ready') {
             w.setState('ready', false);
         }
@@ -253,6 +258,7 @@ const Coop = {
         scene.add(this.group);
 
         Arsenal.onLocalShot = shot => this.localShot(shot);
+        Arsenal.onLocalSwing = (weapon, o) => this.localSwing(weapon, o);
         Net.on('st', (msg, from) => this.fromGuest(msg, from));
         Net.on('ps', msg => this.fromHost(msg));
         Net.on('room', msg => this.partyMoved(msg));
@@ -367,11 +373,22 @@ const Coop = {
     // ------------------------------------------------------------------ state sync
 
     localShot(shot) {
+        const o = shot.fire || {};
+        if (!o.early) {
+            this.pushFire(shot.weapon, o);
+        }
+    },
+
+    // A `replayAtSwing` weapon started a swing: replay it now instead of when the hit lands.
+    localSwing(weapon, o) {
+        this.pushFire(weapon, o);
+    },
+
+    pushFire(weapon, o) {
         if (!this.running) {
             return;
         }
-        const o = shot.fire || {};
-        const def = Weapons.get(shot.weapon);
+        const def = Weapons.get(weapon);
         let key = '';
         if (o.projectile) {
             for (const k in def) {
@@ -381,10 +398,10 @@ const Coop = {
                 }
             }
         }
-        const w = Arsenal.weapons[shot.weapon];
+        const w = Arsenal.weapons[weapon];
         this.events.push([
             o.mode || '', o.pellets || 0, o.spread === undefined ? null : o.spread, o.kickScale || 0, o.flashScale || 0,
-            key, (w && w.data.lastCharge) || 0, shot.weapon
+            key, (w && w.data.lastCharge) || 0, weapon
         ]);
     },
 
@@ -412,6 +429,12 @@ const Coop = {
         }
         p.pos.set(+a[1] || 0, +a[2] || 0, +a[3] || 0);
         p.vel.set(+a[4] || 0, +a[5] || 0, +a[6] || 0);
+        // Highest point in the last few seconds, so the host can cap an air slam's height bonus.
+        const now = performance.now() / 1000;
+        if (!(p.peakT > now - 2.5) || p.pos.y >= p.peakY) {
+            p.peakY = p.pos.y;
+            p.peakT = now;
+        }
         p.yaw = +a[7] || 0;
         p.pitch = +a[8] || 0;
         p.weapon = String(a[9]);
@@ -560,11 +583,18 @@ const Coop = {
             return;
         }
         const r = v => Math.round(v * 100) / 100;
-        Net.send({
+        const msg = {
             t: 'sh', w: shot.weapon, m: shot.mode || '', d: shot.damage, p: shot.dirs.length,
             o: shot.origin ? [r(shot.origin.x), r(shot.origin.y), r(shot.origin.z)] : null,
             f: o.f, h: o.h, n: o.n
-        });
+        };
+        // Weapons the host validates itself (`def.validate`, the hammer) also send the aim and power.
+        const def = Weapons.get(shot.weapon);
+        if (def && def.validate) {
+            msg.a = shot.aim ? [r(shot.aim.x), r(shot.aim.y), r(shot.aim.z)] : null;
+            msg.k = r(shot.power || 0);
+        }
+        Net.send(msg);
     },
 
     remoteShot(msg, from) {
@@ -581,7 +611,7 @@ const Coop = {
         const maxPellets = mode === 'charged' ? stats.pellets + 7 : stats.pellets;
         const vec = a => new THREE.Vector3(+a[0] || 0, +a[1] || 0, +a[2] || 0);
         const origin = Array.isArray(msg.o) ? vec(msg.o) : by.eye.clone();
-        if (origin.distanceTo(by.eye) > 4) {
+        if (origin.distanceTo(by.eye) > (def.originReach || 4)) {
             origin.copy(by.eye);
         }
         const shot = {
@@ -589,7 +619,24 @@ const Coop = {
             damage: Math.max(0, Math.min(+msg.d || 0, by.god ? CONFIG.god.damage : maxDamage)),
             dirs: new Array(Math.max(0, Math.min(msg.p | 0, maxPellets)))
         };
-        const hits = Array.isArray(msg.h) ? msg.h.filter(Array.isArray).slice(0, Math.max(1, maxPellets)) : [];
+        const maxHits = def.maxHits ? def.maxHits(mode) : Math.max(1, maxPellets);
+        let hits = Array.isArray(msg.h) ? msg.h.filter(Array.isArray).slice(0, maxHits) : [];
+        // Melee that hits several enemies (the hammer) checks the whole shot against its own stats.
+        if (def.validate) {
+            if (Array.isArray(msg.a)) {
+                shot.aim = vec(msg.a);
+                if (shot.aim.lengthSq() > 1e-6) {
+                    shot.aim.normalize();
+                } else {
+                    shot.aim = null;
+                }
+            }
+            shot.power = Math.max(0, Math.min(1, +msg.k || 0));
+            hits = def.validate(shot, hits, by);
+            if (!hits) {
+                return;
+            }
+        }
         const kind = Enemies.remoteShot(shot, hits, Array.isArray(msg.n) ? vec(msg.n) : null, !!msg.f);
         if (kind) {
             Net.sendTo(from, { t: 'hm', k: kind, d: shot.dealt });

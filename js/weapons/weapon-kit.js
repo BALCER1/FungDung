@@ -843,6 +843,9 @@ class Weapon {
         this.fx = new SporeFX(this.rig, opts.worldParent, this.lod);
         this.projectiles = new SporeProjectiles(this.fx);
         this.onShot = opts.onShot || null;
+        // `def.replayAtSwing`: tells other players about a swing when it starts (`onSwing`), not when
+        // its hit lands, so a long wind-up replays in step. The released shot is then marked `early`.
+        this.onSwing = opts.onSwing || null;
         this.trace = opts.trace || null;
         this.view = null;
 
@@ -1032,6 +1035,10 @@ class Weapon {
         }
         if (this.def.onFire) {
             this.def.onFire(this, side, o);
+        }
+        if (this.def.replayAtSwing && this.onSwing) {
+            o.early = true;
+            this.onSwing(this.id, o);
         }
         if (this.stats.hitDelay > 0) {
             this.pending = { t: this.stats.hitDelay, side, o };

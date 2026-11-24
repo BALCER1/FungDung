@@ -571,6 +571,27 @@ class Enemy {
         this.action = { name: kind, t: 0, dur: T + 0.6, air: true, land: new THREE.Vector3(x, y, z), vh };
     }
 
+    // Thrown through the air by a hit (hammer swipe or slam): `vel` is the new velocity, `stun` the
+    // seconds of stagger after landing (`afterLaunch`). It is an `air` + `lock` action, so minds
+    // leave it alone like a leap, and it reaches guest puppets through the normal action events.
+    launch(vel, stun = 0.4) {
+        if (this.dead) {
+            return;
+        }
+        this.vel.copy(vel);
+        this.onGround = false;
+        this.climbing = false;
+        this.path = null;
+        const dir = new THREE.Vector3(vel.x, 0, vel.z);
+        if (dir.lengthSq() > 1e-6) {
+            dir.normalize();
+        }
+        this.action = { name: 'launched', t: 0, dur: 3, air: true, lock: true, stun, dir };
+    }
+
+    // Landed from `launch`. Enemy types add their stagger here.
+    afterLaunch() {}
+
     dash(dx, dz, speed, dur, name, extra = {}) {
         const d = Math.hypot(dx, dz) || 1;
         this.vel.x = dx / d * speed;
@@ -603,6 +624,9 @@ class Enemy {
                 this.action = null;
                 this.climbing = false;
                 this.landed();
+                if (a.name === 'launched') {
+                    this.afterLaunch(a);
+                }
             } else if (a.t > a.dur) {
                 this.action = null;
                 this.climbing = false;
@@ -852,8 +876,13 @@ class Enemy {
         }
         if (n) {
             n.age += dt;
-            const lead = Math.min(n.age, 0.12);
+            // Launched: predict along a falling arc, so a 20 Hz snapshot still draws a smooth curve.
+            const fly = !!a && a.name === 'launched' && !this.onGround;
+            const lead = Math.min(n.age, fly ? 0.25 : 0.12);
             _ev.set(n.x + n.vx * lead, n.y + n.vy * lead, n.z + n.vz * lead);
+            if (fly) {
+                _ev.y = Math.max(_ev.y - 0.5 * GRAV * lead * lead, Enemies.floorAt(_ev.x, n.y, _ev.z));
+            }
             if (this.pos.distanceToSquared(_ev) > 25) {
                 this.pos.copy(_ev);
             } else {
@@ -1839,9 +1868,21 @@ const Enemies = {
             return null;
         }
         const before = e.hp;
-        const kind = e.takeHit(shot.damage, part, hit, dir, shot);
+        const shape = this.shapeHit(e, hit, shot);
+        const kind = e.takeHit(shot.damage * (shape ? shape.scale : 1), part, hit, dir, shot);
         this.dealt(e, before - Math.max(0, e.hp), hit.point, kind, shot);
+        if (shape && shape.push && !e.dead && e.launch) {
+            e.launch(shape.push, shape.stun);
+        }
         return kind;
+    },
+
+    // A weapon's `def.shapeHit(shot, e, hit)` gives one enemy's share of a shot: `scale` (damage
+    // multiplier), `push` (launch velocity) and `stun`. Runs on the host only, for local and guest
+    // shots alike, and works only from shot data, so a guest cannot choose its own numbers.
+    shapeHit(e, hit, shot) {
+        const def = Weapons.get(shot.weapon);
+        return def && def.shapeHit ? def.shapeHit(shot, e, hit) : null;
     },
 
     // Health a shot took off an enemy, for damage numbers. Only the shooter sees them: a guest's
