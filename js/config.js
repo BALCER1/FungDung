@@ -18,7 +18,6 @@ const CONFIG = {
     coopEnemyHealth: 0,
     netRate: 20,
     travelCountdown: 15,
-    remoteGunDetail: 'medium',
     maxPlayers: 4,
     downed: {
         bleedout: 30,
@@ -89,6 +88,20 @@ const DETAIL = {
     particles: 1,
     particleLevels: { high: 1, medium: 0.5, low: 0.25 },
     deathFx: 'full',
+    remoteGuns: 'medium',
+
+    // Settings > Graphics > Graphics quality. Each preset sets every graphics option at once, so
+    // players never have to balance them. `pixelCap` limits the screen's pixel ratio (a laptop at
+    // 200% scaling renders 4x the pixels at 2, 2.25x at 1.5); Render scale multiplies on top.
+    // `remoteGuns` is the detail of teammates' guns in co-op.
+    presets: {
+        high: { enemies: 'high', guns: 'high', lighting: 'high', particles: 'high', deathFx: 'full', antialias: true, pixelCap: 1.5, remoteGuns: 'medium' },
+        medium: { enemies: 'medium', guns: 'medium', lighting: 'medium', particles: 'medium', deathFx: 'full', antialias: false, pixelCap: 1, remoteGuns: 'medium' },
+        low: { enemies: 'potato', guns: 'potato', lighting: 'low', particles: 'low', deathFx: 'simple', antialias: false, pixelCap: 1, remoteGuns: 'potato' }
+    },
+    preset(name) {
+        return DETAIL.presets[name] || DETAIL.presets.high;
+    },
 
     seg(level, n, min = 3) {
         return Math.max(min, Math.round(n * (DETAIL.scale[level] || 1)));
@@ -124,4 +137,6 @@ const BOOT = (() => {
         return {};
     }
 })();
-DETAIL.antialias = BOOT.antialias !== false;
+// The first renderer's antialiasing comes from the saved quality preset (see `rebuildRenderer`).
+DETAIL.antialias = DETAIL.preset(BOOT.quality ||
+    (BOOT.gunDetail === 'potato' ? 'low' : BOOT.gunDetail === 'medium' ? 'medium' : 'high')).antialias;

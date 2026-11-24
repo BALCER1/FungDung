@@ -86,8 +86,7 @@ const Game = {
             }
         });
 
-        this.setState('intro');
-        Intro.play(() => this.setState('menu'));
+        this.setState('menu');
         this.last = performance.now();
         requestAnimationFrame(t => this.loop(t));
     },

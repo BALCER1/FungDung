@@ -2,44 +2,45 @@ const Settings = {
     key: 'fungdung.settings',
     values: {
         renderScale: 1,
-        upscale: 'smooth',
         fov: CONFIG.fov,
         sensitivity: 4,
         fullscreen: false,
         darkMode: false,
         devMode: false,
         godMode: false,
-        enemyDetail: 'high',
-        gunDetail: 'high',
-        antialias: true,
-        lighting: 'high',
-        particles: 'high',
-        deathFx: 'full',
+        // One preset (DETAIL.presets) instead of separate detail, lighting, particle, death effect
+        // and antialiasing options.
+        quality: 'high',
         hitmarkers: 'color',
         damageNumbers: 'off',
         showFps: false
     },
     choices: {
-        enemyDetail: DETAIL.names,
-        gunDetail: DETAIL.names,
-        lighting: ['high', 'medium', 'low'],
-        particles: ['high', 'medium', 'low'],
-        deathFx: ['full', 'simple'],
+        quality: ['high', 'medium', 'low'],
         hitmarkers: ['color', 'white', 'off'],
         damageNumbers: ['off', 'stack', 'each']
     },
 
     init() {
+        let saved = {};
         try {
-            Object.assign(this.values, JSON.parse(localStorage.getItem(this.key)) || {});
+            saved = JSON.parse(localStorage.getItem(this.key)) || {};
         } catch (e) {
+        }
+        Object.assign(this.values, saved);
+        // Saves from before the quality preset: pick the preset closest to the old gun detail.
+        const v = this.values;
+        if (v.gunDetail && !saved.quality) {
+            v.quality = v.gunDetail === 'potato' ? 'low' : v.gunDetail === 'medium' ? 'medium' : 'high';
+        }
+        for (const k of ['enemyDetail', 'gunDetail', 'lighting', 'particles', 'deathFx', 'antialias', 'upscale']) {
+            delete v[k];
         }
 
         const $ = id => document.getElementById(id);
         this.el = {
             scale: $('setScale'),
             scaleOut: $('setScaleOut'),
-            upscale: $('setUpscale'),
             fov: $('setFov'),
             fovOut: $('setFovOut'),
             fullscreen: $('setFullscreen'),
@@ -49,15 +50,9 @@ const Settings = {
             dark: $('setDark'),
             dev: $('setDev'),
             god: $('setGod'),
-            enemyDetail: $('setEnemyDetail'),
-            gunDetail: $('setGunDetail'),
-            lighting: $('setLighting'),
-            particles: $('setParticles'),
-            deathFx: $('setDeathFx'),
+            quality: $('setQuality'),
             hitmarkers: $('setHitmarkers'),
             damageNumbers: $('setDamageNumbers'),
-            antialias: $('setAntialias'),
-            aaNote: $('setAaNote'),
             showFps: $('setFps')
         };
 
@@ -66,13 +61,11 @@ const Settings = {
         });
 
         this.el.scale.value = this.values.renderScale;
-        this.el.upscale.value = this.values.upscale;
         this.el.fov.value = this.values.fov;
         this.el.sens.value = this.values.sensitivity;
         this.el.dark.checked = this.values.darkMode;
 
         this.el.scale.oninput = () => this.set('renderScale', +this.el.scale.value);
-        this.el.upscale.onchange = () => this.set('upscale', this.el.upscale.value);
         this.el.fov.oninput = () => this.set('fov', +this.el.fov.value);
         this.el.sens.oninput = () => this.set('sensitivity', +this.el.sens.value);
         this.el.dark.onchange = () => this.set('darkMode', this.el.dark.checked);
@@ -87,7 +80,7 @@ const Settings = {
             this.el[k].value = this.values[k];
             this.el[k].onchange = () => this.set(k, this.el[k].value);
         }
-        for (const k of ['antialias', 'showFps']) {
+        for (const k of ['showFps']) {
             this.el[k].checked = this.values[k];
             this.el[k].onchange = () => this.set(k, this.el[k].checked);
         }
@@ -148,8 +141,11 @@ const Settings = {
 
     apply() {
         const v = this.values;
+        // Antialiasing is fixed per canvas, so a change swaps in a new renderer on the spot.
+        if (DETAIL.preset(v.quality).antialias !== DETAIL.antialias) {
+            rebuildRenderer(DETAIL.preset(v.quality).antialias);
+        }
         this.applyResolution();
-        renderer.domElement.style.imageRendering = v.upscale === 'sharp' ? 'pixelated' : 'auto';
         document.documentElement.classList.toggle('dark', v.darkMode);
 
         CONFIG.fov = v.fov;
@@ -159,16 +155,19 @@ const Settings = {
         if (typeof Enemies !== 'undefined' && Enemies.ready) {
             Enemies.setDev(v.devMode);
         }
-        if (DETAIL.enemies !== v.enemyDetail) {
-            DETAIL.enemies = v.enemyDetail;
+        const P = DETAIL.preset(v.quality);
+        if (DETAIL.enemies !== P.enemies) {
+            DETAIL.enemies = P.enemies;
             if (typeof ShellcapKit !== 'undefined') {
-                ShellcapKit.setDetail(v.enemyDetail);
+                ShellcapKit.setDetail(P.enemies);
             }
         }
-        const relight = DETAIL.lighting !== v.lighting;
-        if (DETAIL.guns !== v.gunDetail || relight) {
-            DETAIL.guns = v.gunDetail;
-            DETAIL.lighting = v.lighting;
+        const relight = DETAIL.lighting !== P.lighting;
+        const remote = DETAIL.remoteGuns !== P.remoteGuns;
+        if (DETAIL.guns !== P.guns || relight || remote) {
+            DETAIL.guns = P.guns;
+            DETAIL.lighting = P.lighting;
+            DETAIL.remoteGuns = P.remoteGuns;
             if (typeof Arsenal !== 'undefined' && Arsenal.current) {
                 Arsenal.rebuild();
                 if (relight) {
@@ -179,18 +178,17 @@ const Settings = {
                 }
             }
         }
-        const particles = DETAIL.particleLevels[v.particles];
+        const particles = DETAIL.particleLevels[P.particles];
         if (DETAIL.particles !== particles) {
             DETAIL.particles = particles;
             if (typeof Enemies !== 'undefined' && Enemies.fx) {
                 Enemies.fx.setAmount(particles);
             }
         }
-        DETAIL.deathFx = v.deathFx;
+        DETAIL.deathFx = P.deathFx;
         if (Perf.on !== v.showFps) {
             Perf.set(v.showFps);
         }
-        this.el.aaNote.hidden = v.antialias === DETAIL.antialias;
 
         this.el.scaleOut.textContent = Math.round(v.renderScale * 100) + '%';
         this.el.fovOut.textContent = v.fov + '°';
@@ -198,7 +196,7 @@ const Settings = {
     },
 
     applyResolution() {
-        renderer.setPixelRatio(Math.min(devicePixelRatio, 2) * this.values.renderScale);
+        renderer.setPixelRatio(Math.min(devicePixelRatio, DETAIL.preset(this.values.quality).pixelCap) * this.values.renderScale);
         renderer.setSize(innerWidth, innerHeight);
         const size = renderer.getDrawingBufferSize(new THREE.Vector2());
         this.el.res.textContent = `Rendering at ${size.x} × ${size.y}`;

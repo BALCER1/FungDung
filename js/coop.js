@@ -4,6 +4,9 @@ class Avatar {
         this.yaw = 0;
         this.pitch = 0;
         this.weapon = null;
+        // Every gun this teammate has held, built once. Switching back shows the cached copy
+        // instead of building it again (8-30 ms of model building, a stutter for everyone else).
+        this.weapons = new Map();
         this.wstate = null;
         this.hands = new Hands();
         this.base = new THREE.Vector3();
@@ -72,22 +75,50 @@ class Avatar {
 
     setWeapon(id) {
         if (this.weapon) {
-            this.weapon.dispose();
+            this.stow(this.weapon);
             this.weapon = null;
         }
         this.wstate = null;
         if (!Weapons.get(id)) {
             return;
         }
-        const w = new Weapon(id, {
-            worldParent: scene,
-            lod: CONFIG.remoteGunDetail,
-            remote: true,
-            trace: (origin, dir, range) => Arsenal.trace(origin, dir, range)
-        });
+        let w = this.weapons.get(id);
+        if (!w) {
+            w = new Weapon(id, {
+                worldParent: scene,
+                lod: DETAIL.remoteGuns,
+                remote: true,
+                trace: (origin, dir, range) => Arsenal.trace(origin, dir, range)
+            });
+            this.weapons.set(id, w);
+        } else {
+            // A fresh draw, as a newly built copy would start. The next update takes the
+            // teammate's real weapon state (`wstate` was cleared above).
+            w.equip();
+        }
         this.head.add(w.root);
         w.setHands(this.hands);
         this.weapon = w;
+    }
+
+    // Puts a gun away: its effects and thrown copies are cleared and it leaves the scene, but it
+    // stays built for the next switch.
+    stow(w) {
+        w.clearEffects();
+        w.setHands(null);
+        if (w.root.parent) {
+            w.root.parent.remove(w.root);
+        }
+    }
+
+    // Disposes every cached gun (leaving co-op, or graphics settings changed).
+    dropWeapons() {
+        for (const w of this.weapons.values()) {
+            w.dispose();
+        }
+        this.weapons.clear();
+        this.weapon = null;
+        this.wstate = null;
     }
 
     fire(ev) {
@@ -208,10 +239,7 @@ class Avatar {
     }
 
     dispose() {
-        if (this.weapon) {
-            this.weapon.dispose();
-            this.weapon = null;
-        }
+        this.dropWeapons();
         this.hands.syncBatch(false);
         for (const key in this.hands.regions) {
             this.hands.regions[key].dispose();
@@ -741,8 +769,10 @@ const Coop = {
     rebuildWeapons() {
         for (const av of this.avatars.values()) {
             av.hands.relight();
-            if (av.weapon) {
-                av.setWeapon(av.weapon.id);
+            const id = av.weapon ? av.weapon.id : null;
+            av.dropWeapons();
+            if (id) {
+                av.setWeapon(id);
             }
         }
     },

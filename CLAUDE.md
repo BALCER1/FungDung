@@ -59,11 +59,11 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 |---|---|
 | `js/db.js` | `DB`: Supabase client, guest sign-in, account upgrade, login, profile name. Sets `DB.status` to `online` or `offline` |
 | `js/profile.js` | `Profile`: Profile screen and the player name on the main menu |
-| `js/config.js` | `CONFIG` (tunables), `DETAIL` (graphics levels), `BOOT` |
+| `js/config.js` | `CONFIG` (tunables), `DETAIL` (graphics levels and the `presets` behind Settings > Graphics quality), `BOOT` |
 | `js/rng.js` | `Rng`: seeded random streams. `Rng.w()` for world generation, `Rng.ai()` for enemy decisions |
 | `js/engine.js` | `scene`, `camera`, `renderer`, `Input`, `Player`, `RoomBuilder`, `colTop`, `snapDown` |
-| `js/batch.js` | `MeshBatch`: merges a model into few draw calls (medium/potato detail) |
-| `js/settings.js`, `js/perf.js`, `js/intro.js` | Settings screen, FPS counter, intro animation |
+| `js/batch.js` | `MeshBatch`: merges a model into few draw calls (guns, hands and enemies, every detail level) |
+| `js/settings.js`, `js/perf.js` | Settings screen, FPS counter |
 | `js/rooms/room-kit.js` | `Rooms` registry, `Door`, `RoomKit` (procedural room pieces) |
 | `js/rooms/*.js` | One `Rooms.register(type, { build(b, node) })` per room type |
 | `js/weapons/weapon-kit.js` | `WeaponKit`, `WeaponBuilder`, `SporeFX`, `SporeProjectiles`, `Weapon`, `WeaponView`, `ScopeOverlay`, `Weapons` registry |
@@ -97,8 +97,8 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 - `Game.present` says whether the local player is physically in the loaded room. A co-op host on
   the waiting map has a room loaded but is not present. `Game.roomKey` is `'layer:index'`.
 - Headless Chrome cannot take pointer lock, so `enterRoom` ends in `'paused'` there. Tests set
-  `'playing'` by hand, and again after the pointer-lock error lands (keep re-setting it), and call
-  `Intro.finish()` first or the intro covers screenshots. SwiftShader runs at about 10 fps and `dt`
+  `'playing'` by hand, and again after the pointer-lock error lands (keep re-setting it). The game
+  opens straight on the main menu (there is no intro). SwiftShader runs at about 10 fps and `dt`
   is capped at 0.05, so wait on weapon time (`prevFireT` / `prevActT`, which is what the pose
   used) rather than wall-clock sleeps, and freeze with `Game.state = 'paused'` before a screenshot.
 - `Player.moveScale` and `Player.noJump` are set every frame by `Arsenal.update` from the held
@@ -107,7 +107,7 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 - First-person guns render in a second pass: `WeaponView` uses its own 55 degree camera that sees
   only layer 1. A `Weapon` that is never passed to `WeaponView.attach` stays on layer 0 and renders
   as a normal world object.
-- Medium/potato detail moves source meshes to layer 30 (`BATCH_LAYER`) and draws a merged proxy.
+- Batching (every detail level) moves source meshes to layer 30 (`BATCH_LAYER`) and draws a merged proxy.
   Raycasts that should hit batched models must enable that layer (`Arsenal.ray` does).
 - `Arsenal.trace` raycasts `Game.room.group` only. Enemies live inside it. Anything that shots
   should pass through must not be parented there.
@@ -118,6 +118,37 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
   JavaScript should point at `Proj.html` directly.
 - `Input.init` blocks the default action of Space except inside form fields. New text inputs work,
   but anything else that needs Space must be handled the same way.
+
+
+## Rendering performance (keep these true)
+
+- Light counts must stay constant. three.js r128 shares one light state between the world pass
+  and the gun pass, and bakes light counts into shaders. If a pass's light count changes, every lit
+  material re-checks its shader (every frame, if the passes differ) or compiles a new one.
+  - `WeaponView.addLights` adds 3 zero-intensity directional lights on layer 0 (`pads`) to match
+    the 3 gun-pass lights. Adding a gun-pass light needs another pad.
+  - Muzzle flash lights are fixed slots on the camera (`Arsenal.muzzleLights`, as many as the gun
+    with the most flashes, only at Lighting High). `WeaponBuilder.flash` lights are never added to
+    the scene; `Arsenal.syncMuzzleLights` copies them each frame. Never add lights inside a gun.
+- `MeshBatch` merges guns, hands and enemies at every detail level; detail only changes model
+  resolution. Anything a batched model shows must use materials `MeshBatch.eligible` accepts, or
+  it is drawn separately (transparent, vertex colours, shader materials, tubes).
+- `WeaponBuilder.compact` runs after every weapon's `build` and `init` (opt out with
+  `compact: false`). It bakes static detail meshes into one mesh per parent and material. A mesh
+  survives only if it is a `b.part`, is reachable from the returned parts object or `w.data`, or
+  has children, a name, user data, transparency or special drawing. So any mesh a weapon animates,
+  hides or swaps must be kept in the parts object (all weapons already do this).
+- Gun particles (`SporeFX`) are one `InstancedMesh` per space (gun rig or world), shape and
+  blending, coloured by a per-instance `fxTint` attribute (r128's `instanceColor` does not reach
+  the basic material's fragment shader). Normal-blended particles are sorted back to front.
+- Teammates' guns are cached per `Avatar` (`weapons` map; `stow` and `dropWeapons`). Settings
+  changes call `Coop.rebuildWeapons`, which drops the cache.
+- Settings > Graphics quality picks one of `DETAIL.presets` (high, medium, low), which sets gun
+  and enemy detail, lighting, particles, death effects, antialiasing, the pixel ratio cap and
+  teammates' gun detail (`DETAIL.remoteGuns`). Render scale multiplies on top.
+- `renderer` is a `let`: an antialiasing change calls `rebuildRenderer` (engine.js), which swaps
+  in a new WebGLRenderer and canvas without reloading the page. Always read `renderer` and
+  `renderer.domElement` at the moment you need them; never store them or put listeners on the canvas.
 
 ## Players, targeting and damage
 

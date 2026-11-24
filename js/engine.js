@@ -2,10 +2,29 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
 const camera = new THREE.PerspectiveCamera(CONFIG.fov, innerWidth / innerHeight, 0.1, 400);
 camera.rotation.order = 'YXZ';
-const renderer = new THREE.WebGLRenderer({ antialias: DETAIL.antialias });
+// `let`: replaced by `rebuildRenderer` when antialiasing changes. Code must read `renderer` (and
+// `renderer.domElement`) when it needs it, never keep its own reference.
+let renderer = new THREE.WebGLRenderer({ antialias: DETAIL.antialias });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 document.body.prepend(renderer.domElement);
+
+// WebGL only chooses antialiasing when a canvas is created, so changing it means a new renderer.
+// The new canvas takes the old one's place, and three.js re-uploads every mesh, texture and shader
+// to it on its first frame (a short freeze while shaders compile). The run, the room and any co-op
+// connection carry on untouched.
+function rebuildRenderer(antialias) {
+    const old = renderer;
+    const next = new THREE.WebGLRenderer({ antialias });
+    next.setPixelRatio(old.getPixelRatio());
+    next.setSize(innerWidth, innerHeight);
+    next.domElement.style.cssText = old.domElement.style.cssText;
+    old.domElement.replaceWith(next.domElement);
+    renderer = next;
+    DETAIL.antialias = antialias;
+    old.dispose();
+    old.forceContextLoss();
+}
 
 scene.add(new THREE.HemisphereLight(0xffffff, 0xd0d0d0, 0.75));
 const sun = new THREE.DirectionalLight(0xffffff, 0.45);

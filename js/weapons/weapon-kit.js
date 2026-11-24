@@ -354,6 +354,92 @@ class WeaponBuilder {
         return g;
     }
 
+    // Combines static detail meshes into one mesh per parent and material (a gun drops from up to
+    // 190 visible meshes to 43-90), so merging has less to walk each frame and thrown world copies
+    // (pistols, spear) draw in fewer calls. Runs for every weapon unless `def.compact === false`. A mesh is
+    // only combined when nothing can reach it afterwards: it is not an animated part (`part`), not
+    // referenced anywhere in `refs` (the parts object and weapon data), and has no children, name,
+    // user data, special drawing (tube growth, draw range, render order) or transparency. Its
+    // transform is baked into the vertices, so it looks the same.
+    compact(roots, refs) {
+        const keep = new Set(this.parts);
+        const seen = new Set();
+        const scan = v => {
+            if (!v || typeof v !== 'object' || seen.has(v)) {
+                return;
+            }
+            seen.add(v);
+            if (v.isObject3D) {
+                keep.add(v);
+            } else if (Array.isArray(v)) {
+                v.forEach(scan);
+            } else if (Object.getPrototypeOf(v) === Object.prototype) {
+                for (const k in v) {
+                    scan(v[k]);
+                }
+            }
+        };
+        scan(refs);
+        const plainDraw = THREE.Object3D.prototype.onBeforeRender;
+        const groups = new Map();
+        for (const root of roots) {
+            root.traverse(o => {
+                const g = o.geometry;
+                const m = o.material;
+                if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || keep.has(o) || !o.parent || o.children.length ||
+                    o.name || !o.visible || o.renderOrder || Object.keys(o.userData).length || o.onBeforeRender !== plainDraw ||
+                    !m || Array.isArray(m) || m.transparent || m.vertexColors || m.map ||
+                    !g.attributes.position || !g.attributes.normal || g.morphAttributes.position ||
+                    g.drawRange.start !== 0 || g.drawRange.count !== Infinity) {
+                    return;
+                }
+                let byMat = groups.get(o.parent);
+                if (!byMat) {
+                    groups.set(o.parent, byMat = new Map());
+                }
+                let list = byMat.get(m);
+                if (!list) {
+                    byMat.set(m, list = []);
+                }
+                list.push(o);
+            });
+        }
+        let removed = 0;
+        for (const [parent, byMat] of groups) {
+            for (const [mat, list] of byMat) {
+                if (list.length < 2) {
+                    continue;
+                }
+                const pos = [];
+                const nor = [];
+                for (const o of list) {
+                    o.updateMatrix();
+                    let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+                    g.applyMatrix4(o.matrix);
+                    const P = g.attributes.position.array;
+                    const N = g.attributes.normal.array;
+                    // A mirrored transform flips the triangles' winding; keep them facing out.
+                    const flip = o.matrix.determinant() < 0;
+                    for (let t = 0; t < P.length; t += 9) {
+                        const order = flip ? [0, 2, 1] : [0, 1, 2];
+                        for (const k of order) {
+                            pos.push(P[t + k * 3], P[t + k * 3 + 1], P[t + k * 3 + 2]);
+                            nor.push(N[t + k * 3], N[t + k * 3 + 1], N[t + k * 3 + 2]);
+                        }
+                    }
+                    g.dispose();
+                    parent.remove(o);
+                }
+                const geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+                geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+                parent.add(new THREE.Mesh(geo, mat));
+                removed += list.length - 1;
+            }
+        }
+        return removed;
+    }
+
     flash(parent, pos, color, size = 0.05, intensity = 3) {
         const g = this.group(parent, pos);
         const mat = new THREE.MeshBasicMaterial({
@@ -371,13 +457,18 @@ class WeaponBuilder {
     }
 }
 
+// Gun particles. Every particle of one kind (space, shape, blending) is an instance of one
+// InstancedMesh, so a burst of hundreds of particles is a handful of draw calls instead of one each.
+// Spaces: 'local' (in the gun's rig, drawn in the gun pass on `layer`) and 'world' (in `worldParent`,
+// world layer). Shapes: 'dot' and 'ring'. Blending: additive (glows, order does not matter) or
+// normal (smoke, drawn back to front). Colour and opacity are per instance (the `fxTint` attribute).
 class SporeFX {
     constructor(local, worldParent, lod) {
         this.lod = lod || DETAIL.guns;
         this.local = local;
         this.worldParent = worldParent || null;
         this.live = [];
-        this.pools = { dot: [], ring: [] };
+        this.pool = [];
         this.geos = {
             dot: new THREE.IcosahedronGeometry(1, this.lod === 'high' ? 1 : 0),
             ring: new THREE.TorusGeometry(1, 0.07, DETAIL.seg(this.lod, 6), DETAIL.seg(this.lod, 32, 6))
@@ -385,9 +476,54 @@ class SporeFX {
         this.max = 500;
         this.layer = 0;
         this.acc = {};
+        this.buckets = {};
         this._v = new THREE.Vector3();
         this._q = new THREE.Quaternion();
         this._z = new THREE.Vector3(0, 0, 1);
+        this._s = new THREE.Vector3();
+        this._m = new THREE.Matrix4();
+        this._cam = new THREE.Vector3();
+    }
+
+    // Two materials shared by every gun: additive and normal blending, with per-instance tint.
+    static material(additive) {
+        const key = additive ? 'add' : 'normal';
+        const all = SporeFX._mats || (SporeFX._mats = {});
+        if (!all[key]) {
+            const mat = new THREE.MeshBasicMaterial({
+                transparent: true, depthWrite: false,
+                blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending
+            });
+            mat.onBeforeCompile = shader => {
+                shader.vertexShader = 'attribute vec4 fxTint;\nvarying vec4 vFxTint;\n' +
+                    shader.vertexShader.replace('#include <color_vertex>', '#include <color_vertex>\n\tvFxTint = fxTint;');
+                shader.fragmentShader = 'varying vec4 vFxTint;\n' +
+                    shader.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor *= vFxTint;');
+            };
+            mat.customProgramCacheKey = () => 'sporefx-tint';
+            all[key] = mat;
+        }
+        return all[key];
+    }
+
+    bucket(world, shape, additive) {
+        const key = (world ? 'w' : 'l') + shape + (additive ? 'a' : 'n');
+        let b = this.buckets[key];
+        if (!b) {
+            const geo = this.geos[shape].clone();
+            const tint = new THREE.InstancedBufferAttribute(new Float32Array(this.max * 4), 4);
+            tint.setUsage(THREE.DynamicDrawUsage);
+            geo.setAttribute('fxTint', tint);
+            const mesh = new THREE.InstancedMesh(geo, SporeFX.material(additive), this.max);
+            mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+            mesh.frustumCulled = false;
+            mesh.visible = false;
+            mesh.count = 0;
+            mesh.name = 'sporefx';
+            (world ? this.worldParent : this.local).add(mesh);
+            b = this.buckets[key] = { mesh, tint, world, sorted: !additive, list: [] };
+        }
+        return b;
     }
 
     rate(key, perSecond, dt) {
@@ -402,22 +538,15 @@ class SporeFX {
         if (this.live.length >= this.max * DETAIL.particles || (shape === 'dot' && DETAIL.skip())) {
             return null;
         }
-        let p = this.pools[shape].pop();
-        if (!p) {
-            const mat = new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false });
-            p = { mesh: new THREE.Mesh(this.geos[shape], mat), shape, pos: new THREE.Vector3(), vel: new THREE.Vector3() };
-            p.mesh.frustumCulled = false;
-        }
-        const mat = p.mesh.material;
-        mat.color.set(o.color === undefined ? 0xffffff : o.color);
-        mat.blending = o.additive === false ? THREE.NormalBlending : THREE.AdditiveBlending;
-
+        const p = this.pool.pop() || { pos: new THREE.Vector3(), vel: new THREE.Vector3(), q: new THREE.Quaternion(), color: new THREE.Color() };
+        p.shape = shape;
+        p.color.set(o.color === undefined ? 0xffffff : o.color);
         p.pos.copy(o.pos);
         p.vel.copy(o.vel || this._v.set(0, 0, 0));
-        let parent = this.local;
+        let world = false;
         if (o.world) {
             if (this.worldParent) {
-                parent = this.worldParent;
+                world = true;
                 this.worldParent.worldToLocal(p.pos);
             } else {
                 this.local.worldToLocal(p.pos);
@@ -425,11 +554,7 @@ class SporeFX {
                 p.vel.applyQuaternion(this._q);
             }
         }
-        if (p.mesh.parent !== parent) {
-            parent.add(p.mesh);
-        }
-        p.mesh.layers.set(parent === this.local ? this.layer : 0);
-        p.mesh.visible = true;
+        p.bucket = this.bucket(world, shape, o.additive !== false);
         p.age = 0;
         p.life = o.life || 0.6;
         p.size = o.size || 0.01;
@@ -443,9 +568,9 @@ class SporeFX {
         p.stretch = o.stretch || 0;
         p.fadeIn = o.fadeIn === undefined ? 0.04 : o.fadeIn;
         if (shape === 'ring' && o.dir) {
-            p.mesh.quaternion.setFromUnitVectors(this._z, this._v.copy(o.dir).normalize());
+            p.q.setFromUnitVectors(this._z, this._v.copy(o.dir).normalize());
         } else {
-            p.mesh.quaternion.identity();
+            p.q.identity();
         }
         this.live.push(p);
         return p;
@@ -477,44 +602,99 @@ class SporeFX {
             p.vel.multiplyScalar(Math.exp(-p.drag * dt));
             p.pos.addScaledVector(p.vel, dt);
             const s = WeaponKit.lerp(p.size, p.sizeEnd, t);
-            p.mesh.position.copy(p.pos);
             if (p.stretch && p.shape === 'dot') {
                 const sp = p.vel.length();
                 if (sp > 0.001) {
-                    p.mesh.quaternion.setFromUnitVectors(this._z, v.copy(p.vel).multiplyScalar(1 / sp));
+                    p.q.setFromUnitVectors(this._z, v.copy(p.vel).multiplyScalar(1 / sp));
                 }
-                p.mesh.scale.set(s, s, s + sp * p.stretch);
+                p.sx = s;
+                p.sz = s + sp * p.stretch;
             } else {
-                p.mesh.scale.setScalar(s);
+                p.sx = p.sz = s;
             }
-            p.mesh.material.opacity = p.opacity * Math.min(1, p.age / p.fadeIn) * (1 - t * t);
+            p.alpha = p.opacity * Math.min(1, p.age / p.fadeIn) * (1 - t * t);
+        }
+        this.draw();
+    }
+
+    // Writes every live particle into its bucket's instances. Smoke (normal blending) is sorted
+    // back to front, as separate transparent meshes were before.
+    draw() {
+        const B = this.buckets;
+        for (const k in B) {
+            B[k].list.length = 0;
+        }
+        for (const p of this.live) {
+            p.bucket.list.push(p);
+        }
+        const cam = typeof camera !== 'undefined' ? camera : null;
+        for (const k in B) {
+            const b = B[k];
+            const list = b.list;
+            const mesh = b.mesh;
+            if (!b.world) {
+                mesh.layers.set(this.layer);
+            }
+            mesh.visible = list.length > 0;
+            if (!list.length) {
+                mesh.count = 0;
+                continue;
+            }
+            if (b.sorted && cam && list.length > 1) {
+                const c = cam.getWorldPosition(this._cam);
+                (b.world ? this.worldParent : this.local).worldToLocal(c);
+                for (const p of list) {
+                    p.depth = p.pos.distanceToSquared(c);
+                }
+                list.sort((a, b2) => b2.depth - a.depth);
+            }
+            const T = b.tint.array;
+            for (let i = 0; i < list.length; i++) {
+                const p = list[i];
+                this._m.compose(p.pos, p.q, this._s.set(p.sx, p.sx, p.sz));
+                mesh.setMatrixAt(i, this._m);
+                T[i * 4] = p.color.r;
+                T[i * 4 + 1] = p.color.g;
+                T[i * 4 + 2] = p.color.b;
+                T[i * 4 + 3] = p.alpha;
+            }
+            mesh.count = list.length;
+            mesh.instanceMatrix.needsUpdate = true;
+            b.tint.needsUpdate = true;
         }
     }
 
     kill(i) {
         const p = this.live[i];
-        p.mesh.visible = false;
-        this.live.splice(i, 1);
-        this.pools[p.shape].push(p);
+        const last = this.live.pop();
+        if (last !== p) {
+            this.live[i] = last;
+        }
+        p.attract = null;
+        this.pool.push(p);
     }
 
     clear() {
-        for (let i = this.live.length - 1; i >= 0; i--) {
-            this.kill(i);
+        this.pool.push(...this.live);
+        this.live.length = 0;
+        for (const k in this.buckets) {
+            const m = this.buckets[k].mesh;
+            m.count = 0;
+            m.visible = false;
         }
     }
 
     dispose() {
         this.clear();
-        for (const k in this.pools) {
-            for (const p of this.pools[k]) {
-                if (p.mesh.parent) {
-                    p.mesh.parent.remove(p.mesh);
-                }
-                p.mesh.material.dispose();
+        for (const k in this.buckets) {
+            const m = this.buckets[k].mesh;
+            if (m.parent) {
+                m.parent.remove(m);
             }
-            this.pools[k].length = 0;
+            m.geometry.dispose();
+            m.dispose();
         }
+        this.buckets = {};
         this.geos.dot.dispose();
         this.geos.ring.dispose();
     }
@@ -884,6 +1064,9 @@ class Weapon {
         }
         if (def.init) {
             def.init(this);
+        }
+        if (def.compact !== false) {
+            this.b.compact([this.parts.model, ...(this.parts.rigExtras || [])], [this.parts, this.data, this.grips]);
         }
     }
 
