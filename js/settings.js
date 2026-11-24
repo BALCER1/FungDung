@@ -161,6 +161,9 @@ const Settings = {
             if (typeof ShellcapKit !== 'undefined') {
                 ShellcapKit.setDetail(P.enemies);
             }
+            if (typeof CaplingKit !== 'undefined') {
+                CaplingKit.setDetail(P.enemies);
+            }
         }
         const relight = DETAIL.lighting !== P.lighting;
         const remote = DETAIL.remoteGuns !== P.remoteGuns;

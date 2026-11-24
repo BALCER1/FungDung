@@ -10,6 +10,10 @@ Rooms.register('elite', {
             ledges: RoomKit.pick([[-1], [1], [-1, 1]]),
             features: { pillars: 3, cover: 4, wall: 3, mound: 2, crates: 2, balcony: 3, empty: 1 }
         });
-        b.enemies = [{ type: 'shellcap', count: [5, 7], clusters: [2, 3] }];
+        const C = CONFIG.caplings;
+        b.enemies = [
+            { type: 'shellcap', count: C.eliteShellcaps, clusters: [2, 3] },
+            { type: 'capling', count: C.elite, clusters: C.clusters }
+        ];
     }
 });

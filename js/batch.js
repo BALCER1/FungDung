@@ -51,6 +51,10 @@ class MeshBatch {
         this.root = root;
         this.skip = opts.skip || null;
         this.bounds = opts.bounds || null;
+        // Opt-in: also merge meshes whose material uses vertex colours (their geometry must carry a
+        // `color` attribute). Lets a model paint many colours with one material, so it draws in
+        // fewer calls. Others keep the old rule: vertex-coloured meshes are not batched.
+        this.colors = !!opts.colors;
         this.items = new Map();
         this.seen = new Set();
         this.proxy = null;
@@ -62,7 +66,8 @@ class MeshBatch {
     eligible(m) {
         const mat = m.material;
         const g = m.geometry;
-        return !!mat && !Array.isArray(mat) && !mat.transparent && !mat.vertexColors && !mat.isShaderMaterial &&
+        return !!mat && !Array.isArray(mat) && !mat.transparent && !mat.isShaderMaterial &&
+            (!mat.vertexColors || (this.colors && !!g.attributes.color)) &&
             !m.isSkinnedMesh && !m.isInstancedMesh && !m.userData.tube && !m.userData.noBatch &&
             g.attributes.position && g.attributes.normal && g.drawRange.start === 0 && g.drawRange.count === Infinity;
     }
@@ -174,6 +179,7 @@ class MeshBatch {
         const nor = new Float32Array(total * 3);
         const si = new Uint16Array(total * 4);
         const sw = new Float32Array(total * 4);
+        const col = this.colors ? new Float32Array(total * 3).fill(1) : null;
         const bones = [];
         const boneIndex = new Map();
         for (const [m, it] of this.items) {
@@ -196,6 +202,7 @@ class MeshBatch {
             const g = m.geometry;
             const P = g.attributes.position;
             const N = g.attributes.normal;
+            const Cl = col ? g.attributes.color : null;
             const idx = g.index;
             for (let k = 0; k < it.count; k++) {
                 const src = idx ? idx.getX(k) : k;
@@ -210,11 +217,19 @@ class MeshBatch {
                 nor[d * 3 + 2] = _bv.z;
                 si[d * 4] = b;
                 sw[d * 4] = 1;
+                if (Cl) {
+                    col[d * 3] = Cl.getX(src);
+                    col[d * 3 + 1] = Cl.getY(src);
+                    col[d * 3 + 2] = Cl.getZ(src);
+                }
             }
         }
         const geo = new THREE.BufferGeometry();
         geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
         geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+        if (col) {
+            geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        }
         geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
         geo.setAttribute('skinWeight', new THREE.BufferAttribute(sw, 4));
         if (this.bounds) {

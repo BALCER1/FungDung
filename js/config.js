@@ -12,7 +12,7 @@ const CONFIG = {
     sensitivity: 0.002,
     stages: 12,
     version: '1.0',
-    netVersion: 11,
+    netVersion: 12,
     coopEnemyCount: 0.3,
     coopEnemyDamage: 0.3,
     coopEnemyHealth: 0,
@@ -69,6 +69,17 @@ const CONFIG = {
         timeout: 4,
         refresh: 6 * 3600,
         retry: 60
+    },
+    // Capling colony workers: how many appear in each room. Their combat numbers (HP, damage,
+    // speed, brain) are in the enemy def in js/enemies/capling.js, like the Shellcap's.
+    caplings: {
+        combat: [6, 10],            // workers in a combat room
+        combatShellcaps: [2, 3],    // Shellcaps alongside them (3-5 before workers existed)
+        elite: [6, 10],
+        eliteShellcaps: [4, 5],     // (5-7 before workers existed)
+        colonyChance: 0.25,         // chance a combat room is workers only
+        colony: [8, 10],            // workers in a workers-only combat room
+        clusters: [3, 4, 5]         // workers spawn in groups of this size
     },
     targeting: {
         hold: 3,

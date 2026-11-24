@@ -62,7 +62,7 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 | `js/config.js` | `CONFIG` (tunables), `DETAIL` (graphics levels and the `presets` behind Settings > Graphics quality), `BOOT` |
 | `js/rng.js` | `Rng`: seeded random streams. `Rng.w()` for world generation, `Rng.ai()` for enemy decisions |
 | `js/engine.js` | `scene`, `camera`, `renderer`, `Input`, `Player`, `RoomBuilder`, `colTop`, `snapDown` |
-| `js/batch.js` | `MeshBatch`: merges a model into few draw calls (guns, hands and enemies, every detail level) |
+| `js/batch.js` | `MeshBatch`: merges a model into few draw calls, one per material (guns, hands and enemies, every detail level). Opt-in `colors` also merges vertex-coloured meshes (Capling) |
 | `js/settings.js`, `js/perf.js` | Settings screen, FPS counter |
 | `js/rooms/room-kit.js` | `Rooms` registry, `Door`, `RoomKit` (procedural room pieces) |
 | `js/rooms/*.js` | One `Rooms.register(type, { build(b, node) })` per room type |
@@ -77,6 +77,7 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 | `js/enemies/nav.js` | `NavGrid`: grid, A*, flow fields, line of sight |
 | `js/enemies/enemy-kit.js` | `Memory`, `Enemy`, `Pack`, `HiveMind`, `Enemies`, `CommFX`, `DevView` |
 | `js/enemies/shellcap.js` | `ShellcapKit`, `Shellcap` (model, damage, animation), `ShellcapMind` (AI) |
+| `js/enemies/capling.js` | `CaplingKit` (geometry, helmet styles, mycelium), `Capling` (armoured fungal colony worker minion), `CaplingMind` (one shared colony brain) |
 | `js/map.js` | `RunMap` (run graph), `MapView` (2D map screen) |
 | `js/net.js` | `Net`: PeerJS connection, host and guest roles, roster, lobby heartbeat, message handlers |
 | `js/lobby.js` | `Lobby`: Multiplayer, Host, Join and Lobby screens, invite links |
@@ -283,6 +284,82 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
   `Enemies.countScale`, `Enemies.healthScale` and `Players.damageScale` for that room, from
   `CONFIG.coopEnemyCount`, `CONFIG.coopEnemyHealth` and `CONFIG.coopEnemyDamage`.
 
+## Capling (minion)
+
+`js/enemies/capling.js`, a hunched, blocky fungal colony worker (about 1.1 m, dark brownish-green
+skin, bone talons, glowing mushrooms on its back) that loves its silver armour, which mycelium has
+started to grow over: 60 HP, a claw rake for 3-4 and a pounce for 4-5. Combat numbers are in the def's `brain`; room counts are
+in `CONFIG.caplings`. Loads after shellcap.js and reuses its `SHELL_VS`, `HEAD_MULT`, `LIMB_MULT`,
+`shellGeoBase`, `mergeGeos`, `chip`.
+
+- Built to be cheap in numbers. `CaplingMind` overrides `HiveMind.update`: one colony per room
+  decides every `brain.thinkEvery` (0.25 s). Workers have no sense/think of their own; per frame
+  they re-steer every `brain.steerEvery` and check whether they may attack.
+- Calm: the colony checks `brain.looks` workers' sight per decision, in turn, into one shared
+  `alert`. Noises heard by several workers count once, at the loudest. It engages on full alert, a
+  loud shot, a worker hurt or killed, or another enemy type engaged within `brain.comm`. Once
+  engaged it never calms down and knows where every player is. Idle workers wander or stop to
+  `polish` their breastplate (an unlocked action, chance `brain.polish`, cleared on any alert).
+- Engaged: `assign` shares workers between players (`brain.spread`, `brain.stick`, `brain.scent`
+  for wounded players, `CONFIG.targeting.hold`). `surround` gives the nearest `maxAttackers(T)` per
+  player a token and a spot on the attack ring (`brain.ring`); the rest press in on the waiting
+  ring (`brain.waitRing`). Spots are evenly spaced and keep the order the workers stand in. Inside
+  `brain.direct` a worker steers straight to its spot, otherwise it follows the shared per-player
+  flow field (`Enemy.chase`). Workers without a token claw only if the player walks right into
+  them. Token holders 2.2-4.2 m out may `pounce` (a `coast` leap, like the Shellcap lunge).
+- Bloodlust: `mind.frenzy` (0..1) rises per hit that draws blood (`Players.hurt` returned > 0), per
+  worker killed and per armour piece broken, and decays over time. `lust(T, e)` adds
+  `brain.woundedLust` when the player is below `brain.wounded` HP, and the worker's own `rage`
+  (set by `onHurt` when a hit broke one of its plates, `brain.rageBreak`, decays). Lust speeds
+  workers up, shortens attack cooldowns and from `brain.frenzyExtra` allows one more attacker. Each
+  worker's `mood` is its lust in 4 steps; it picks the glow material (eyes, back sac, helmet slits:
+  amber to red) and reaches guests through the normal `packNet` mood field.
+- Model: boxes, square prisms and six-sided plates, flat-shaded (`flat()` gives face normals for
+  the Lambert matte material). Armour is built with `solid()` (outer and inner faces, rims, end
+  caps; thin double-sided shells at the lowest detail) and closed `dome()`s, so no piece looks
+  hollow. The head sits low and forward between the shoulders, sunk into the breastplate's collar.
+  Pauldrons hang on their own joint (`pj`) on the spine, which follows the arm only partly, so they
+  stay on the shoulder when the arms reach. Armour plates that can break (part ids are their
+  names): `chest`, `helm`, `paulL`, `paulR`, in that order; no regrowth. Shin splints and forearm
+  guards are decoration with limb multipliers. Head hits are capped at x1.25 until the helmet
+  breaks. The glowing back mushrooms (`shrooms`) are x1.5.
+- Cheap to draw: colours are painted into the geometry (`paint()`, a `color` attribute; `merge()`
+  keeps them, `mergeGeos` does not), so a worker uses three materials: `matte` (Lambert: skin,
+  hands, feet, mouth, mycelium), `shell` (Phong: steel, brass, bone talons; `cracked` and
+  `critical` are tints of it) and the mood glow. `Capling.syncBatch` passes `colors: true` to
+  `MeshBatch`, which then merges vertex-coloured meshes too (opt-in; nothing else uses it), so a
+  worker is three draw calls. Pieces that share a joint and a material are one mesh (torso with
+  its stalks and back mycelium, head with its fangs, shin with the shin splint's mycelium, each
+  plate with its brass). Matte plate extras (`userData.lod`: the mycelium and dark bits on the
+  breastplate, pauldrons and helmet) are hidden beyond `CP.farMyco` (24 m, 2 m of slack). About 3.8k
+  triangles per worker close up at high, 2.5k far, 2.7k medium, 1.6k low.
+- Mycelium (`CaplingKit.grow`): pale strands that random-walk over the real faceted surface of a
+  piece (each step is projected onto the nearest triangle, so they follow facets and stop at
+  edges), branch, and sprout tiny mushrooms. A strand is a flat ribbon (two triangles a step,
+  wound to face outward; `matte` is front-sided), a sprout a three-sided stalk and a five-sided
+  cap. Seeded (`prng`), so it is the same on every client. Built once per detail level into
+  `chestM`, `paulM<L|R>`, `helm<i>X` (plate extras, so they break off with the plate) and into the
+  `torso` and `shin` meshes. Strand counts scale with `DETAIL.enemies`; no sprouts at the lowest.
+- Helmets (`CAPLING_HELMS`): kettle hat, nasal helm, great helm, sallet, barbute, built for a 0.115
+  head and scaled by `CP.helm`. `helmGeo` builds the shell, brass trim (`T`), glow slits (`G`), dark
+  bits (`D`) and mycelium (`M`); `makeGeo` then paints and merges them into `helm<i>` (shell and
+  trim, `shell` material, cracks), `helm<i>X` (dark bits and mycelium, `matte`) and `helm<i>G`.
+  The host picks the style with `Rng.w()` in the constructor (seeded, so a room looks the same
+  every time); puppets start at 0 and get it as the last element of `packState` (`setHelm`).
+  Closed styles hide the eyes (`faceParts`) until the helmet breaks.
+- Animation: hip/knee/ankle and shoulder/elbow/wrist/finger joints on `THREE.Object3D`s, driven by
+  a walk cycle from speed (no IK), blended toward a target pose. The hips are placed from the legs
+  each frame so the lower foot stands on the floor: every step, knee bend and bounce shows as a bob.
+  Hunting arms reach out and take turns grabbing at the target's chest (`grip` opens and clenches
+  the fingers), faster when close or bloodthirsty; this only needs `engaged`, `target` and `mood`,
+  so puppets do it too. `animate` runs every frame within 14 m of the camera, at 30 Hz to 28 m,
+  15 Hz beyond. All workers share geometry and materials; a dying one clones its glow material so
+  it can fade.
+- Death: canned collapse (buckle, fall about the feet, spore puff, sink); intact plates fall off
+  as debris unless `DETAIL.deathFx` is `'simple'`.
+- Co-op: standard puppet path. Uses the base 15-int `packNet`; `packState` is the four plate
+  percentages and the helmet style; hit events use the same kind indices as the Shellcap.
+
 ## Carapace Maul (hammer)
 
 `js/weapons/hammer.js`, a living beetle-shell hammer. Tunables are in the def: `guard`, `swipe`,
@@ -352,7 +429,7 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
       sight from the impact on the host.
     - Air slam: `power` capped from `by.peakY` (highest position the host saw in the last 2.5 s,
       kept in `Coop.apply`).
-  - `CONFIG.netVersion` is 11.
+  - `CONFIG.netVersion` was 11 for the hammer; it is 12 since the Capling.
 - Model: the head is a `head` group (squash) holding `fleshG` (core and veins, bulges), five
   pairs of shell plates hinged on the dorsal ridge (`rotation.z` opens them like wing cases,
   `rotation.x` lifts them), belly scutes, the striking face (-z), crown, mandibles, antennae and
