@@ -12,7 +12,7 @@ const CONFIG = {
     sensitivity: 0.002,
     stages: 12,
     version: '1.0',
-    netVersion: 13,
+    netVersion: 14,
     coopEnemyCount: 0.3,
     coopEnemyDamage: 0.3,
     coopEnemyHealth: 0,

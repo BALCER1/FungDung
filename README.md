@@ -22,7 +22,7 @@ Built with plain JavaScript and three.js, no frameworks or build step.
 | Puffcap Blunderbuss | shotgun | hold to charge a bigger blast |
 | Morel Carbine | auto rifle | 3 round burst |
 | Amanita Longshot | sniper | scope in |
-| Chanterelle Eagles | dual pistols | throw them like boomerangs |
+| Chanterelle Eagles | dual bladed revolvers | throw them, roots burst out of you to catch them and haul them back |
 
 Each gun is modelled and animated fully in code and shows its ammo on the gun itself, like the spore vial on the carbine draining as you shoot.
 

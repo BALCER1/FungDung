@@ -68,7 +68,7 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 | `js/rooms/*.js` | One `Rooms.register(type, { build(b, node) })` per room type |
 | `js/weapons/weapon-kit.js` | `WeaponKit`, `WeaponBuilder`, `SporeFX`, `SporeProjectiles`, `Weapon`, `WeaponView`, `ScopeOverlay`, `Weapons` registry |
 | `js/weapons/ground-fx.js` | `GroundFX`: slam effects (purple shockwave, radius flash and edge ring, sparks, floor-coloured debris, dust, crack decal with glowing cracks), floor colour sampling |
-| `js/weapons/{shotgun,rifle,sniper,pistols,spear,hammer}.js` | One `Weapons.register(id, def)` each: model, pose, hand pose, effects (spear: grapnel throw and trail, see below) |
+| `js/weapons/{shotgun,rifle,sniper,pistols,spear,hammer}.js` | One `Weapons.register(id, def)` each: model, pose, hand pose, effects (pistols: revolvers and the root-caught throw; spear: grapnel throw and trail; see below) |
 | `js/hands.js` | `HandKit`, `HandShapes`, `Hand`, `Hands` (grip-driven hands) |
 | `js/weapons/arsenal.js` | `Arsenal`: local player's weapons, input, HUD, two-pass render |
 | `js/vitals.js` | `Vitals`: local player HP, damage flash, hit direction marks |
@@ -436,7 +436,8 @@ in `CONFIG.caplings`. Loads after shellcap.js and reuses its `SHELL_VS`, `HEAD_M
       sight from the impact on the host.
     - Air slam: `power` capped from `by.peakY` (highest position the host saw in the last 2.5 s,
       kept in `Coop.apply`).
-  - `CONFIG.netVersion` was 11 for the hammer, 12 for the Capling; it is 13 since the spear's grapnel throw.
+  - `CONFIG.netVersion` was 11 for the hammer, 12 for the Capling, 13 for the spear's grapnel throw;
+    it is 14 since the Chanterelle revolvers' throw check (`def.validate`, so their `sh` carries `a` / `k`).
 - Model: the head is a `head` group (squash) holding `fleshG` (core and veins, bulges), five
   pairs of shell plates hinged on the dorsal ridge (`rotation.z` opens them like wing cases,
   `rotation.x` lifts them), belly scutes, the striking face (-z), crown, mandibles, antennae and
@@ -479,6 +480,62 @@ in `CONFIG.caplings`. Loads after shellcap.js and reuses its `SHELL_VS`, `HEAD_M
   two strands twisting around it), additive and faded through vertex colours. It is fed with
   samples from the grapnel's position (`f.hp`) while flying and fades out after a hit. `drop`
   clears it and `dispose` frees it.
+
+## Chanterelle Eagles (pistols)
+
+`js/weapons/pistols.js`, two chanterelle revolvers (16 rounds, 8 a gun, alternating at
+`stats.rate` 5 in all; projectiles and inspect as before). Each shot has a heavy kick: the gun's
+`kick` / `twist` springs drive a big muzzle flip, a shove back and a wrist twist, on top of the
+rig's `stats.kick`. Throw numbers are in `throwT`.
+
+- Model: each gun `g` holds the frame (standing breech with side gills, top strap with gills),
+  the barrel (frilled muzzle, cream top rib, deep ribs, teal inlays), the trigger guard,
+  `trigger`, `hammer` and the grip with its sac, medallions and tassel. The cylinder (`cyl`,
+  8 chambers at angle pi/2 + k * `STEP`, gill ridges between them) sits on a `crane` that
+  `swing()` turns about an axis along the barrel, low on the inner side, so it swings out toward
+  the middle of the view. `chambers` are marker groups for the spent husks. Blades
+  (`buildBlade`, an extruded profile with a scalloped edge and a pale honed strip): a long one
+  under the barrel (its tip hooks up past the muzzle, glowing fullers) and a spur on the trigger
+  guard. They do not move. `segScale` { high 0.7, medium 0.85 } and the `lo` / `po` flags (fewer
+  decoration boxes at medium / low) keep the pair at about 10.9k / 5.5k / 2.7k triangles.
+- Fire: the hammer snaps; the cylinder turns one chamber after each of that gun's shots, from
+  `share()`, so teammates' copies get it for free. No casing per shot (revolvers keep them).
+- Reload (`tl()`): the twirl, vines, sac and wither are unchanged. The cylinder swings out after
+  the twirl (`open`, the thumb straightens), spent husks fall from the fired chambers at
+  `eject`, and it snaps shut at `rack`. Inspect: the old slide pull is a cylinder peek.
+- Throw (`'throw'` state: `windup`, `flight`, `catch`). `launch` aims both guns at a point
+  `reach` ahead (11 m; `wallAt` ignores enemies, so it stops `wall` short of walls only), each
+  `gap[1]` beside it; each gun's own path is cut short of a wall too. `pathAt`: out for `out` s,
+  nearly straight and at close to full speed (`keep` of it left at the end, so no hover), a slight
+  `rise`; then it turns back at once (a short jolt) and is hauled to where the hand holds it now,
+  steadily at first (`reel`) and faster at the end, into the catch. The copies spin flat (`spin`),
+  so the barrel blade sweeps.
+- Hits: each step `bladeSweep` checks the path against every live enemy's body (a vertical
+  segment) with `enemy radius + hitRadius` (0.3, the blade sweep at flight size), then a ray toward
+  the body (`rayEnemy`: walls block, corpses are skipped); the plain trace still catches walls and
+  direct hits, whichever comes first. Each gun hits at most every `hitCd` s, for `damage`, through
+  `w.reportHits(..., { mode: 'boomerang' })`.
+- Roots (`throwT.roots`, `rootMesh`, `updateRoots`): the guns fly out free. `shoot` s before a gun
+  reaches the far point, `perGun` roots (2 at low detail) lash out of the player (`rootBase`: the
+  palm, the wrist, the sleeve, the body below the eye; hand sockets go through `w.worldPos`),
+  bowing and whipping (capped at `maxBend` m), catch the gun as it arrives (the vein flares, a
+  yank through the rig, a burst at the gun, the hands clench) and writhe as they haul it back,
+  pulling into the hand over the last `retract` s. One world mesh per weapon: a camera-facing
+  tapered, knotted ribbon per root with a bark texture and a teal vein (unlit, opaque), one draw
+  call; points per root `DETAIL.seg(w.lod || DETAIL.guns, roots.seg, 6)`. With the fungi a throw
+  adds about 2.9k triangles at High while the roots are out. Per-throw shapes are
+  random (`rootSeeds`, `sproutSeeds`, cosmetic). Fungi (`throwT.fungi`): orange cordyceps clubs and small
+  chanterelle caps sprout along each root a moment after it passes (`placeFungi`), standing out
+  of the bark and leaning toward the tip, sized up with the root's length so they read far off.
+  Two `InstancedMesh`es per weapon (`cordycepsGeo`, `capGeo`, vertex-painted by `paintMerge`, a
+  lit material), counts per root by detail level. Cosmetic only. `cancel` hides them (weapon switch,
+  `Arsenal.reset` for going down and new rooms, a teammate's gun being put away); `dispose` frees
+  them.
+- Co-op: teammates' copies run the same throw from the `'throw'` state (their own trace and view
+  of the thrower's aim), roots included. The host's `validate` passes normal shots and keeps a
+  thrown hit only if the enemy is within `reach + radius + hitRadius + netSlack` of the thrower's
+  eye, at most `maxHits` per throw window (`by.eagleNet`); damage is clamped to `throwT.damage`
+  as before.
 
 ## Seeded randomness
 
