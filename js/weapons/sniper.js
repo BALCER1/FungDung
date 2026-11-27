@@ -1,5 +1,7 @@
 Weapons.register('sniper', {
     name: 'Amanita Longshot',
+    // Curve detail at High, on top of DETAIL.scale (see WeaponBuilder).
+    segScale: { high: 0.7 },
     altName: 'Scope',
     offset: [0.27, -0.18, -0.6],
     stats: {

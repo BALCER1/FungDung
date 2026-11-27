@@ -1,5 +1,7 @@
 Weapons.register('rifle', {
     name: 'Morel Carbine',
+    // Curve detail at High, on top of DETAIL.scale (see WeaponBuilder).
+    segScale: { high: 0.7 },
     altName: 'Burst',
     offset: [0.27, -0.17, -0.58],
     stats: {

@@ -142,6 +142,13 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 - Gun particles (`SporeFX`) are one `InstancedMesh` per space (gun rig or world), shape and
   blending, coloured by a per-instance `fxTint` attribute (r128's `instanceColor` does not reach
   the basic material's fragment shader). Normal-blended particles are sorted back to front.
+- Hands are built per detail level (`HandShapes.LEVELS`: box rounding and palm gills; one shared
+  geometry set per level). The local hands follow `DETAIL.guns`, teammates' hands
+  `DETAIL.remoteGuns`; `Hands.setDetail` swaps the geometry in place (Settings and
+  `Coop.rebuildWeapons` call it). About 11.4k / 4.9k / 2.0k triangles for the pair.
+- A weapon def may set `segScale` (`{ high: 0.7 }`) to lower its own curve detail at a level on top
+  of `DETAIL.scale` (`WeaponBuilder.n`). The shotgun, rifle, sniper and spear use it so every gun is
+  about 9-12k triangles at High.
 - Teammates' guns are cached per `Avatar` (`weapons` map; `stow` and `dropWeapons`). Settings
   changes call `Coop.rebuildWeapons`, which drops the cache.
 - Settings > Graphics quality picks one of `DETAIL.presets` (high, medium, low), which sets gun

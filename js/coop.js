@@ -8,7 +8,7 @@ class Avatar {
         // instead of building it again (8-30 ms of model building, a stutter for everyone else).
         this.weapons = new Map();
         this.wstate = null;
-        this.hands = new Hands();
+        this.hands = new Hands({ lod: DETAIL.remoteGuns });
         this.base = new THREE.Vector3();
         this.tip = 0;
         this.crouch = 0;
@@ -769,6 +769,7 @@ const Coop = {
     rebuildWeapons() {
         for (const av of this.avatars.values()) {
             av.hands.relight();
+            av.hands.setDetail(DETAIL.remoteGuns);
             const id = av.weapon ? av.weapon.id : null;
             av.dropWeapons();
             if (id) {

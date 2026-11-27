@@ -13,8 +13,19 @@ const HandKit = {
 };
 
 const HandShapes = {
+    // Hand detail per level: local hands follow `DETAIL.guns`, teammates' hands `DETAIL.remoteGuns`.
+    // `curve` and `bevel` are the rounding segments of every box (bevel 0: square edges), `gills`
+    // the ridges under the palm (0: none, and none on the fingers either).
+    LEVELS: {
+        high: { curve: 2, bevel: 2, gills: 22 },
+        medium: { curve: 1, bevel: 1, gills: 12 },
+        potato: { curve: 1, bevel: 0, gills: 0 }
+    },
+    q: null,
+
     box(w, h, d, bevel) {
-        const b = Math.min(bevel, w * 0.3, h * 0.3, d * 0.3);
+        const q = HandShapes.q;
+        const b = q.bevel ? Math.min(bevel, w * 0.3, h * 0.3, d * 0.3) : 0;
         const W = w - 2 * b;
         const H = h - 2 * b;
         const r = Math.min(W, H) * 0.2;
@@ -29,8 +40,8 @@ const HandShapes = {
         s.lineTo(-W / 2, -H / 2 + r);
         s.quadraticCurveTo(-W / 2, -H / 2, -W / 2 + r, -H / 2);
         let geo = new THREE.ExtrudeGeometry(s, {
-            depth: Math.max(0.0001, d - 2 * b), bevelEnabled: true,
-            bevelThickness: b, bevelSize: b, bevelSegments: 2, curveSegments: 3
+            depth: Math.max(0.0001, d - 2 * b), bevelEnabled: b > 0,
+            bevelThickness: b, bevelSize: b, bevelSegments: q.bevel, curveSegments: q.curve
         });
         geo.center();
         if (geo.index) {
@@ -104,8 +115,9 @@ const HandShapes = {
         list.forEach(g => g.dispose());
         return out;
     },
+    // Too thin (1.3 mm) for rounded edges to show, so a plain box.
     gill(len, x, y, z, yaw = 0) {
-        const g = HandShapes.box(0.0013, 0.0014, len, 0.0004);
+        const g = HandShapes.prep(new THREE.BoxGeometry(0.0013, 0.0014, len));
         g.rotateY(yaw);
         g.translate(x, y, z);
         return HandShapes.tint(g, 0.62);
@@ -123,11 +135,14 @@ const HandShapes = {
             });
         }
         S.tint(core, 1);
-        const flesh = S.merge([
-            core,
-            S.gill(len * 0.72, -w * 0.17, -h * 0.49, -len * 0.5),
-            S.gill(len * 0.72, w * 0.17, -h * 0.49, -len * 0.5)
-        ]);
+        const parts = [core];
+        if (S.q.gills) {
+            parts.push(
+                S.gill(len * 0.72, -w * 0.17, -h * 0.49, -len * 0.5),
+                S.gill(len * 0.72, w * 0.17, -h * 0.49, -len * 0.5)
+            );
+        }
+        const flesh = S.merge(parts);
         const plate = S.box(w, h * 0.5, len + (tip ? h * 0.55 : h * 0.12), h * 0.16);
         plate.translate(0, h * 0.21, -len / 2 - (tip ? h * 0.22 : 0));
         if (tip) {
@@ -150,13 +165,15 @@ const HandShapes = {
         return g;
     },
 
-    build() {
+    build(level) {
         const S = HandShapes;
+        S.q = S.LEVELS[level] || S.LEVELS.high;
+        const seg = (n, min) => DETAIL.seg(level, n, min);
         const core = S.box(0.054, 0.021, 0.066, 0.006);
         core.translate(0, -0.005, 0);
         S.tint(core, 1);
         const gills = [];
-        const n = 22;
+        const n = S.q.gills;
         for (let i = 0; i < n; i++) {
             const a = (i / n) * Math.PI * 2;
             const dx = Math.sin(a);
@@ -192,19 +209,19 @@ const HandShapes = {
         });
 
         const oval = g => g.scale(1.08, 0.8, 1);
-        const band = S.prep(new THREE.CylinderGeometry(0.031, 0.0285, 0.02, 20, 1, true));
+        const band = S.prep(new THREE.CylinderGeometry(0.031, 0.0285, 0.02, seg(20, 6), 1, true));
         band.rotateX(Math.PI / 2);
         band.translate(0, 0.0025, 0.044);
-        const hem = S.prep(new THREE.TorusGeometry(0.031, 0.003, 8, 28));
+        const hem = S.prep(new THREE.TorusGeometry(0.031, 0.003, seg(8, 3), seg(28, 8)));
         hem.translate(0, 0.0025, 0.054);
-        const cap = S.prep(new THREE.SphereGeometry(0.0305, 24, 6, 0, Math.PI * 2, 0, Math.PI / 2));
+        const cap = S.prep(new THREE.SphereGeometry(0.0305, seg(24, 8), seg(6, 2), 0, Math.PI * 2, 0, Math.PI / 2));
         cap.rotateX(Math.PI / 2);
         cap.scale(1, 1, 0.3);
         cap.translate(0, 0.0025, 0.0535);
         const cuff = S.merge([S.tint(oval(band), 1), S.tint(oval(hem), 0.85), S.tint(oval(cap), 0.8)]);
 
         const trim = [];
-        const strap = S.prep(new THREE.TorusGeometry(0.0302, 0.0024, 6, 32));
+        const strap = S.prep(new THREE.TorusGeometry(0.0302, 0.0024, seg(6, 3), seg(32, 8)));
         strap.translate(0, 0.0025, 0.043);
         trim.push(S.tint(oval(strap), 1));
         const buckle = S.box(0.013, 0.0045, 0.011, 0.0015);
@@ -213,7 +230,7 @@ const HandShapes = {
         tongue.translate(0, 0.0025 + 0.0302 * 0.8 + 0.0022, 0.043);
         trim.push(S.tint(buckle, 1.15), S.tint(tongue, 0.6));
         for (const x of [-0.0215, -0.0072, 0.0072, 0.0215]) {
-            const stud = S.prep(new THREE.CylinderGeometry(0.0027, 0.0034, 0.0026, 10));
+            const stud = S.prep(new THREE.CylinderGeometry(0.0027, 0.0034, 0.0026, seg(10, 5)));
             stud.rotateX(0.18);
             stud.translate(x, 0.0156, -0.0272);
             trim.push(S.tint(stud, 1.1));
@@ -244,13 +261,16 @@ class Hand {
         const tx = -side;
         this.tx = tx;
 
-        const G = Hands.geometry();
+        const G = Hands.geometry(pair.lod);
         this.root = new THREE.Group();
         this.root.name = 'hand:' + this.name;
         this.meshes = { shell: [], flesh: [], cuff: [], trim: [] };
-        const mk = (piece, parent, pos) => {
+        // `userData.handGeo` is the piece's path in the geometry set, so `Hands.setDetail` can swap it.
+        const mk = (path, parent, pos) => {
+            const piece = Hands.piece(G, path);
             for (const region of ['flesh', 'shell']) {
                 const m = new THREE.Mesh(piece[region], pair.material(region));
+                m.userData.handGeo = path + '.' + region;
                 if (pos) {
                     m.position.fromArray(pos);
                 }
@@ -267,28 +287,28 @@ class Hand {
             parent.add(g);
             return g;
         };
-        const digit = (parts, parent, pos, splay) => {
+        const digit = (path, parent, pos, splay) => {
             const knuckle = group(parent, pos, [0, splay, 0]);
-            mk(parts.prox, knuckle);
-            const joint = group(knuckle, [0, 0, -parts.len[0]]);
-            mk(parts.dist, joint);
+            mk(path + '.prox', knuckle);
+            const joint = group(knuckle, [0, 0, -Hands.piece(G, path).len[0]]);
+            mk(path + '.dist', joint);
             return { knuckle, joint };
         };
 
-        mk(G.palm, this.root);
-        const F = G.fingers;
-        this.fingers = [F.index, F.middle, F.ring, F.little].map((parts, i) => {
+        mk('palm', this.root);
+        this.fingers = ['index', 'middle', 'ring', 'little'].map((name, i) => {
             const x = tx * (0.0215 - i * 0.0143);
-            return digit(parts, this.root, [x, -0.002, -0.028 - (i === 1 ? 0.001 : 0) + (i === 3 ? 0.003 : 0)], -x * 6);
+            return digit('fingers.' + name, this.root, [x, -0.002, -0.028 - (i === 1 ? 0.001 : 0) + (i === 3 ? 0.003 : 0)], -x * 6);
         });
         this.thumb = group(this.root, [tx * 0.027, -0.006, 0.01]);
-        mk(G.thumb.base, this.thumb, [tx * 0.004, 0, 0]);
-        this.thumbDigit = digit(G.thumb, this.thumb, [0, 0, -0.008], -tx * 0.7);
+        mk('thumb.base', this.thumb, [tx * 0.004, 0, 0]);
+        this.thumbDigit = digit('thumb', this.thumb, [0, 0, -0.008], -tx * 0.7);
         this.digits = { inner: 0, index: 0, middle: 1, ring: 2, outer: 3, little: 3, thumb: 4 };
         this.bends = [0, 0, 0, 0, 0];
 
         for (const region of ['cuff', 'trim']) {
             const m = new THREE.Mesh(G[region], pair.material(region));
+            m.userData.handGeo = region;
             this.root.add(m);
             this.meshes[region].push(m);
         }
@@ -446,6 +466,7 @@ class Hand {
 class Hands {
     constructor(opts = {}) {
         this.scale = opts.scale || 1;
+        this.lod = opts.lod || DETAIL.guns;
         const pick = (v, d) => (v === undefined ? d : v);
         const gray = pick(opts.color, 0x8a8f96);
         const plain = c => Hands.plain(c);
@@ -497,11 +518,34 @@ class Hands {
         }
     }
 
-    static geometry() {
-        if (!Hands._geo) {
-            Hands._geo = HandShapes.build();
+    // One shared geometry set per detail level, built on first use.
+    static geometry(level) {
+        const key = HandShapes.LEVELS[level] ? level : 'high';
+        Hands._geo = Hands._geo || {};
+        if (!Hands._geo[key]) {
+            Hands._geo[key] = HandShapes.build(key);
         }
-        return Hands._geo;
+        return Hands._geo[key];
+    }
+    static piece(G, path) {
+        return path.split('.').reduce((o, k) => o[k], G);
+    }
+
+    // Swaps every hand mesh to another detail level's geometry (same pieces in the same places).
+    // A batch notices the new geometry and rebuilds itself.
+    setDetail(level) {
+        if (level === this.lod) {
+            return;
+        }
+        this.lod = level;
+        const G = Hands.geometry(level);
+        for (const h of this.both) {
+            for (const region in h.meshes) {
+                for (const m of h.meshes[region]) {
+                    m.geometry = Hands.piece(G, m.userData.handGeo);
+                }
+            }
+        }
     }
 
     get both() {

@@ -1,5 +1,7 @@
 Weapons.register('shotgun', {
     name: 'Puffcap Blunderbuss',
+    // Curve detail at High, on top of DETAIL.scale (see WeaponBuilder).
+    segScale: { high: 0.7 },
     altName: 'Charge',
     offset: [0.28, -0.19, -0.64],
     stats: {

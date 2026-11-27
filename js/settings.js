@@ -171,6 +171,9 @@ const Settings = {
             DETAIL.guns = P.guns;
             DETAIL.lighting = P.lighting;
             DETAIL.remoteGuns = P.remoteGuns;
+            if (typeof Arsenal !== 'undefined' && Arsenal.hands) {
+                Arsenal.hands.setDetail(P.guns);
+            }
             if (typeof Arsenal !== 'undefined' && Arsenal.current) {
                 Arsenal.rebuild();
                 if (relight) {

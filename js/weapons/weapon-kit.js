@@ -92,15 +92,18 @@ class Spring {
 }
 
 class WeaponBuilder {
-    constructor(lod) {
+    // `segScale` is the weapon def's own curve detail per level (`{ high: 0.7 }`), on top of
+    // `DETAIL.scale`, for guns that would otherwise be much heavier than the rest at that level.
+    constructor(lod, segScale) {
         this.mats = {};
         this.parts = [];
         this.grips = {};
         this.lod = lod || DETAIL.guns;
+        this.segK = (segScale && segScale[this.lod]) || 1;
     }
 
     n(count, min = 3) {
-        return DETAIL.seg(this.lod, count, min);
+        return DETAIL.seg(this.lod, count * this.segK, min);
     }
 
     mat(key, opts) {
@@ -997,7 +1000,7 @@ class Weapon {
 
         this.lod = opts.lod || null;
         this.remote = !!opts.remote;
-        this.b = new WeaponBuilder(this.lod);
+        this.b = new WeaponBuilder(this.lod, def.segScale);
         this.root = new THREE.Group();
         this.root.name = 'weapon:' + id;
         this.root.position.fromArray(def.offset || [0.2, -0.2, -0.42]);

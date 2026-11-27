@@ -5,6 +5,8 @@
 // body passes within `throwCfg.hook` of the path is snagged, not only one the tip touches.
 Weapons.register('spear', {
     name: 'Rootbound Spear',
+    // Curve detail at High, on top of DETAIL.scale (see WeaponBuilder).
+    segScale: { high: 0.7 },
     altName: 'Throw',
     melee: true,
     noise: 9,
