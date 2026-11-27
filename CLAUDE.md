@@ -68,7 +68,7 @@ All files are classic scripts loaded in order by `Proj.html`. They share one glo
 | `js/rooms/*.js` | One `Rooms.register(type, { build(b, node) })` per room type |
 | `js/weapons/weapon-kit.js` | `WeaponKit`, `WeaponBuilder`, `SporeFX`, `SporeProjectiles`, `Weapon`, `WeaponView`, `ScopeOverlay`, `Weapons` registry |
 | `js/weapons/ground-fx.js` | `GroundFX`: slam effects (purple shockwave, radius flash and edge ring, sparks, floor-coloured debris, dust, crack decal with glowing cracks), floor colour sampling |
-| `js/weapons/{shotgun,rifle,sniper,pistols,spear,hammer}.js` | One `Weapons.register(id, def)` each: model, pose, hand pose, effects |
+| `js/weapons/{shotgun,rifle,sniper,pistols,spear,hammer}.js` | One `Weapons.register(id, def)` each: model, pose, hand pose, effects (spear: grapnel throw and trail, see below) |
 | `js/hands.js` | `HandKit`, `HandShapes`, `Hand`, `Hands` (grip-driven hands) |
 | `js/weapons/arsenal.js` | `Arsenal`: local player's weapons, input, HUD, two-pass render |
 | `js/vitals.js` | `Vitals`: local player HP, damage flash, hit direction marks |
@@ -429,7 +429,7 @@ in `CONFIG.caplings`. Loads after shellcap.js and reuses its `SHELL_VS`, `HEAD_M
       sight from the impact on the host.
     - Air slam: `power` capped from `by.peakY` (highest position the host saw in the last 2.5 s,
       kept in `Coop.apply`).
-  - `CONFIG.netVersion` was 11 for the hammer; it is 12 since the Capling.
+  - `CONFIG.netVersion` was 11 for the hammer, 12 for the Capling; it is 13 since the spear's grapnel throw.
 - Model: the head is a `head` group (squash) holding `fleshG` (core and veins, bulges), five
   pairs of shell plates hinged on the dorsal ridge (`rotation.z` opens them like wing cases,
   `rotation.x` lifts them), belly scutes, the striking face (-z), crown, mandibles, antennae and
@@ -443,6 +443,35 @@ in `CONFIG.caplings`. Loads after shellcap.js and reuses its `SHELL_VS`, `HEAD_M
   head travels a wide arc that crosses the middle of the view at `hitDelay`, kept level on
   screen a little below the crosshair (`SWIPE_Y`; `levelE` raises it at the sides, where it is closer). It kicks
   `swayX` / `recoilR` so the view turns with it.
+
+## Rootbound Spear (throw)
+
+`js/weapons/spear.js`. Throw tunables are in `throwCfg`.
+
+- Weapon defs are one object literal, and `Weapon` reads many of its keys (`offset`, `stats`,
+  `hands`, ...). A helper method with the same name silently replaces the setting (a method
+  called `offset` once moved the whole gun out of view). Check `grep "def\.<name>"` before
+  adding a def member.
+- Animation: the charge winds the spear up and back (`windup`, `addPose`). The throw is entered
+  without a pose blend, so it whips forward from there (`THRUST`). The spear leaves the hand
+  `release` seconds in (`d.armed`, `d.launched`; a remote copy whose state moves on first
+  launches then). The empty hand follows through (`FOLLOW`, `LEFT_PULL`) and is back at rest by
+  `throwTime`, when the regrow starts.
+- Grapnel: `buildHook` puts hinged claws and thorns (`parts.tines`, swing in
+  `userData.tine`) around the blade's base. In the hand they grow out over `hookGrow` when a
+  charge starts, open wider with the charge and turn (`d.hookS`, `d.hookO`, `d.hookSpin`). The
+  release whip snaps them fully open. The thrown copy (`flyingMesh` clones `body` and `hook`)
+  leaves fully open, flares, and spins. Claws clamp on a hit (`f.hitT`).
+- Hits: each step `hookHit` checks the path against every live enemy's body (a vertical segment,
+  `radius + throwCfg.hook` wide from the moment of the throw). It then raycasts
+  from the spear toward the body (`rayEnemy`: walls block, corpses are skipped). The aim point stays
+  below the head, so a near miss is never a crit. A snag that comes before the plain trace's hit
+  wins, and the spear turns into it. Guests still report one hit through `reportHits`, and the
+  host's checks are unchanged.
+- Trail: one mesh per weapon under the scene (`trail`). Three camera-facing strips (a band and
+  two strands twisting around it), additive and faded through vertex colours. It is fed with
+  samples from the grapnel's position (`f.hp`) while flying and fades out after a hit. `drop`
+  clears it and `dispose` frees it.
 
 ## Seeded randomness
 

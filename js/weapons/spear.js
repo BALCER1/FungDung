@@ -1,6 +1,8 @@
 // Rootbound Spear: melee poke along the crosshair. Hold RMB to charge a throw; the thrown spear
 // sticks, dissolves into spores, and a new one regrows in the hand from tendrils and mycelium.
 // The regrown spear is infused: its next `lifesteal.hits` pokes that hit an enemy heal the wielder.
+// Charging grows a grapnel head of claws and thorns out of the blade's base, and it flies open: an enemy whose
+// body passes within `throwCfg.hook` of the path is snagged, not only one the tip touches.
 Weapons.register('spear', {
     name: 'Rootbound Spear',
     altName: 'Throw',
@@ -18,18 +20,31 @@ Weapons.register('spear', {
     // chargeTime: seconds to full power, minCharge: power of a tap, speed / minDamage: at 0 and full
     // power (max damage is modeDamage.throw), life: seconds in flight before it starts to dissolve,
     // dissolve: seconds to dissolve, cooldown: seconds from one throw to the next, throwTime and
-    // regrow: length of the throw and regrow animations.
+    // regrow: length of the throw and regrow animations, release: seconds into the throw that the
+    // spear leaves the hand. hook: metres past an enemy's radius the open grapnel snags it,
+    // hookGrow: seconds into a charge over which it grows out in the hand, hookSpin: its spin in
+    // flight in radians a second.
+    // trail: life (s), width, spacing between samples, max samples, and the two twisting strands
+    // (radius, drift outward per second, width, twist in radians per metre).
     throwCfg: {
         chargeTime: 0.6, minCharge: 0.3, speed: [18, 36], minDamage: 40, gravity: 5,
-        life: 1.0, dissolve: 0.6, cooldown: 3.5, throwTime: 0.28, regrow: 1.6, scale: 1.25
+        life: 1.0, dissolve: 0.6, cooldown: 3.5, throwTime: 0.42, release: 0.05, regrow: 1.6, scale: 1.25,
+        hook: 0.3, hookGrow: [0.03, 0.3], hookSpin: 9,
+        trail: { life: 0.32, width: 0.12, spacing: 0.25, max: 48, radius: 0.07, drift: 0.5, strand: 0.03, twist: 2.6 }
     },
     // hits: lifesteal pokes a regrown spear carries, heal: HP per hit.
     lifesteal: { hits: 3, heal: 5 },
     color: 0xff8f84,
     inspect: { time: 3.6 },
     hands: { left: 'front', right: 'rear' },
-    // Left hand pointing ahead while the right hand throws (rig space).
+    // Left hand pointing ahead while the right hand throws, then pulled down and in as the throw
+    // goes (rig space).
     LEFT_AIM: { p: [-0.37, 0.03, -0.24], fingers: [0.25, 0.35, -1], back: [-0.35, 0.9, 0.25], curl: 0.3 },
+    LEFT_PULL: { p: [-0.3, -0.14, -0.13], fingers: [0.45, 0.1, -1], back: [-0.5, 0.8, 0.2], curl: 0.9 },
+    // Model offsets [x, y, z, rot x, rot y, rot z] through the throw: the spear whipped forward at
+    // release, and the empty hand's follow-through down and across the body.
+    THRUST: [-0.03, 0.05, -0.32, -0.05, 0.05, 0.06],
+    FOLLOW: [-0.13, -0.15, -0.4, -0.38, 0.24, 0.12],
 
     R: 0.0155,
     BLADE: [[0.011, 0], [0.017, 0.013], [0.038, 0.054], [0.05, 0.1], [0.048, 0.14], [0.037, 0.19], [0.021, 0.245], [0.0004, 0.3]],
@@ -69,8 +84,11 @@ Weapons.register('spear', {
             tendril: b.glow('tendril', 0xff5f52, 0.8, { color: 0xf0897d, roughness: 0.5 }),
             hair: b.glow('hair', 0xff8073, 0.45, { color: 0xffb3a9, roughness: 0.6 }),
             web: b.glow('web', 0xff6a5d, 0.5, { color: 0xf5a59a, roughness: 0.6 }),
+            claw: b.glow('claw', 0xff6a5d, 0.25, { color: 0xf1e2d4, roughness: 0.35, metalness: 0.2 }),
             halo: new THREE.MeshBasicMaterial({ color: 0xff5a4c, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false })
         };
+        // Emissive the claws keep on the thrown copy (`flyingMesh` resets the rest to 0).
+        m.claw.userData.flyGlow = 0.6;
         const model = b.part(b.group(null, null, [0.066, 0.096, 0.45]));
         // `body` is the spear itself (cloned when thrown, filled in when it regrows); `veins` holds
         // the lifesteal tendrils.
@@ -243,6 +261,7 @@ Weapons.register('spear', {
         }
 
         const web = this.buildWeb(b, model, m.web);
+        const { hook, tines } = this.buildHook(b, model, m, fixed);
 
         const tip = b.group(model, [0, 0, this.BLADE_Z - 0.3]);
         const muzzle = b.group(model, [0, 0, this.BLADE_Z - 0.2]);
@@ -251,7 +270,42 @@ Weapons.register('spear', {
         b.grip('reach', model, [0, 0, -0.53], { fingers: [1, 0.3, 0], back: [0.3, -1, 0], around: R + 0.002, curl: 0.8 });
         // Open hand on the root binding below the socket, for the inspect.
         b.grip('stroke', model, [0, 0, -0.6], { fingers: [1, 0.3, 0], back: [0.3, -1, 0], around: R + 0.006, curl: 0.3 });
-        return { model, body, veins, web, blade, guard, tip, muzzle, rear, front, shrooms, tendrils, nodes, hairs, m };
+        return { model, body, veins, web, hook, tines, blade, guard, tip, muzzle, rear, front, shrooms, tendrils, nodes, hairs, m };
+    },
+
+    // Grapnel head around the blade's base: six bone claws that reach out and curl back (each with
+    // a root sheath and a forward barb) and six short thorns between them, angled forward. Each
+    // sits on a hinge; `userData.tine` holds its swing (rotation.y) folded, open and clamped on a
+    // hit. In the hand it grows out and opens while a throw charges; the thrown copy leaves open.
+    buildHook(b, model, m, fixed) {
+        const hook = b.group(model, [0, 0, this.BLADE_Z - 0.004]);
+        hook.visible = false;
+        b.part(hook);
+        const tines = [];
+        const n = 6;
+        for (let i = 0; i < n; i++) {
+            const a = ((i + 0.5) / n) * Math.PI * 2;
+            const hinge = b.group(hook, [Math.cos(a) * 0.014, Math.sin(a) * 0.014, 0], [0, 0, a]);
+            const claw = b.part(b.group(hinge));
+            claw.userData.tine = { fold: -1.25, open: 0, grab: -0.45 };
+            const s = (i % 2 ? 1 : -1) * 0.007;
+            const L = p => p.map(v => v * 1.25);
+            const pts = [[0, 0, 0.012], [0.03, s * 0.3, -0.022], [0.07, s, -0.034], [0.11, s * 0.8, -0.016], [0.135, s * 0.3, 0.025], [0.14, 0, 0.06], [0.132, 0, 0.082]].map(L);
+            fixed(b.tube(pts, 0.0095, 0.0008, m.claw, claw, { seg: 22, radial: 6 }));
+            fixed(b.tube(pts.slice(0, 3), 0.0125, 0.0075, m.rootDark, claw, { seg: 8, radial: 6 }));
+            fixed(b.tube([[0.07, s, -0.034], [0.085, s, -0.058], [0.093, s, -0.076]].map(L), 0.0055, 0.0005, m.claw, claw, { seg: 6, radial: 5 }));
+            tines.push(claw);
+        }
+        for (let i = 0; i < n; i++) {
+            const a = (i / n) * Math.PI * 2;
+            const hinge = b.group(hook, [Math.cos(a) * 0.012, Math.sin(a) * 0.012, -0.01], [0, 0, a]);
+            const thorn = b.part(b.group(hinge));
+            thorn.userData.tine = { fold: -1.0, open: 0, grab: 0.12 };
+            fixed(b.tube([[0, 0, 0], [0.036, 0, -0.036], [0.068, 0, -0.08]], 0.0068, 0.0005, m.claw, thorn, { seg: 8, radial: 5 }));
+            tines.push(thorn);
+        }
+        b.ring(0.017, 0.006, m.rootDark, hook, [0, 0, 0.004], null, { ts: 14, rs: 5 });
+        return { hook, tines };
     },
 
     // Radius of the handle's surface at z, over the leather wraps and the root binding.
@@ -323,7 +377,7 @@ Weapons.register('spear', {
     // Sheath growth this frame: 0 hidden, 1 covering the whole handle.
     webGrowth(w) {
         const K = WeaponKit;
-        if (w.state === 'charge') {
+        if (w.state === 'charge' || (w.state === 'throw' && !w.data.launched)) {
             return K.ease.outCubic(w.data.charge);
         }
         if (w.state === 'regrow') {
@@ -353,6 +407,14 @@ Weapons.register('spear', {
         d.cool = 0;
         d.drink = -1;
         d.launched = false;
+        d.armed = false;
+        d.relC = 0;
+        d.windA = 0;
+        d.hookS = 0;
+        d.hookO = 0;
+        d.hookSpin = 0;
+        d.pose = [0, 0, 0, 0, 0, 0];
+        d.trail = null;
         d.regrowing = false;
         d.flying = null;
         d.jiggle = new Spring(140, 7);
@@ -393,14 +455,23 @@ Weapons.register('spear', {
             if (move && move.sprinting) {
                 w.setState('ready');
             } else if (!w.altHeld) {
-                w.setState('throw');
+                // No pose blend: the throw starts from the wind-up pose and whips forward at once.
+                w.setState('throw', false);
             }
         }
-        if (w.state !== 'throw') {
-            d.launched = false;
-        } else if (!d.launched) {
+        // The spear leaves the hand `release` seconds into the throw (or as the throw ends, if a
+        // remote copy's state moved on first).
+        const throwing = w.state === 'throw';
+        if (throwing && !d.launched) {
+            d.armed = true;
+        }
+        if (d.armed && (!throwing || w.actT + dt >= T.release)) {
+            d.armed = false;
             d.launched = true;
             this.launch(w);
+        }
+        if (!throwing) {
+            d.launched = false;
         }
         if (w.state === 'throw' && w.actT + dt >= T.throwTime) {
             w.setState('regrow');
@@ -428,11 +499,22 @@ Weapons.register('spear', {
         }
         d.charge = 0;
         d.launched = false;
+        d.armed = false;
         d.regrowing = false;
     },
 
     dispose(w) {
         this.drop(w);
+        const tr = w.data.trail;
+        if (tr) {
+            if (tr.mesh.parent) {
+                tr.mesh.parent.remove(tr.mesh);
+            }
+            tr.mesh.geometry.dispose();
+            tr.mesh.material.map.dispose();
+            tr.mesh.material.dispose();
+            w.data.trail = null;
+        }
     },
 
     enemyOf(obj) {
@@ -507,12 +589,21 @@ Weapons.register('spear', {
         parent.add(mesh);
         const f = d.flying = {
             mesh, pos: start, vel, dir: vel.clone().normalize(), t: 0, end: T.life, landed: false, stuck: null,
-            damage: Math.round(K.lerp(T.minDamage, this.modeDamage.throw, c)), m4: new THREE.Matrix4()
+            damage: Math.round(K.lerp(T.minDamage, this.modeDamage.throw, c)), m4: new THREE.Matrix4(),
+            hp: new THREE.Vector3(), spin: d.hookSpin, hitT: -1
         };
         if (!w.remote) {
             d.cool = T.cooldown;
         }
+        d.relC = d.charge;
         d.charge = 0;
+        // The rig lurches forward with the release.
+        w.recoilZ.kick(-1.6 - c);
+        w.recoilX.kick(-1.4);
+        w.recoilR.kick(0.9);
+        const tr = this.trail(w);
+        tr.pts.length = 0;
+        tr.live = true;
         // Something between the eye and the launch point (a wall right in front) is hit at once.
         const gap = start.clone().sub(origin);
         const block = w.trace ? w.trace(origin, gap.clone().normalize(), gap.length()) : null;
@@ -520,18 +611,35 @@ Weapons.register('spear', {
             this.flyHit(w, f, block);
         }
         this.placeFlying(f);
-        for (let i = 0; i < 8; i++) {
-            w.fx.emit({ world: true, pos: start.clone().addScaledVector(f.dir, 0.4), vel: K.cone(f.dir, 0.6).multiplyScalar(K.rand(0.5, 2)), life: K.rand(0.25, 0.45), size: 0.003, sizeEnd: 0.008, color: this.color, opacity: 0.6, drag: 3 });
+        this.poseHook(f, 0);
+        // Release burst: a shock ring around the shaft and a spray of spores and streaks.
+        const at = start.clone().addScaledVector(f.dir, 0.4);
+        w.fx.emit({ world: true, shape: 'ring', pos: at, dir: f.dir, vel: new THREE.Vector3(), life: 0.22, size: 0.03, sizeEnd: 0.28 + 0.12 * c, color: this.color, opacity: 0.85 });
+        for (let i = 0; i < 14; i++) {
+            w.fx.emit({ world: true, pos: at, vel: K.cone(f.dir, 0.6).multiplyScalar(K.rand(0.5, 2.5)), life: K.rand(0.25, 0.45), size: 0.003, sizeEnd: 0.008, color: i % 3 ? this.color : 0xffffff, opacity: 0.7, drag: 3 });
+        }
+        for (let i = 0; i < 6; i++) {
+            w.fx.emit({ world: true, pos: at, vel: K.cone(f.dir, 0.25).multiplyScalar(K.rand(3, 6)), life: K.rand(0.1, 0.18), size: 0.004, sizeEnd: 0, color: 0xffffff, drag: 4, stretch: 0.05 });
         }
     },
 
-    // A world copy of the spear body with its own materials (so its glow does not leak into the
-    // spear in the hand).
+    // A world copy of the spear body and its grapnel head, with its own materials (so its glow
+    // does not leak into the spear in the hand).
     flyingMesh(w) {
         const mesh = w.parts.body.clone(true);
         mesh.position.set(0, 0, 0);
         mesh.rotation.set(0, 0, 0);
         mesh.scale.setScalar(1);
+        const hook = w.parts.hook.clone(true);
+        hook.visible = true;
+        mesh.add(hook);
+        const tines = [];
+        hook.traverse(o => {
+            o.visible = true;
+            if (o.userData.tine) {
+                tines.push(o);
+            }
+        });
         const mats = new Map();
         mesh.traverse(o => {
             o.layers.set(0);
@@ -540,7 +648,7 @@ Weapons.register('spear', {
                     const c = o.material.clone();
                     if (c.emissive) {
                         c.emissive.set(0xff6f63);
-                        c.emissiveIntensity = 0;
+                        c.emissiveIntensity = c.userData.flyGlow || 0;
                     }
                     mats.set(o.material, c);
                 }
@@ -548,7 +656,156 @@ Weapons.register('spear', {
             }
         });
         mesh.userData.mats = [...mats.values()];
+        mesh.userData.hook = hook;
+        mesh.userData.tines = tines;
         return mesh;
+    },
+
+    // The thrown copy's grapnel: it leaves the hand fully open, flares forward a little as it
+    // flies off, spins in flight, and the claws clamp down when it hits something.
+    poseHook(f, dt) {
+        const K = WeaponKit;
+        const T = this.throwCfg;
+        const flare = 0.25 * K.hump(f.t, 0, 0.16);
+        const grab = f.hitT >= 0 ? K.e('outCubic', f.t, f.hitT, f.hitT + 0.1) : 0;
+        for (const o of f.mesh.userData.tines) {
+            const u = o.userData.tine;
+            o.rotation.y = K.lerp(u.open + flare, u.grab, grab);
+            o.scale.setScalar(1);
+        }
+        if (!f.landed && !f.stuck) {
+            f.spin += dt * T.hookSpin;
+        }
+        f.mesh.userData.hook.rotation.z = f.spin;
+    },
+
+    // How far past an enemy's radius the grapnel snags it (open from the moment it is thrown).
+    reach(f) {
+        return this.throwCfg.hook;
+    },
+
+    scratch: null,
+    sv() {
+        return this.scratch || (this.scratch = Array.from({ length: 8 }, () => new THREE.Vector3()));
+    },
+
+    // Closest points of segments p1-q1 and p2-q2: { s, t } along each (0..1) and d2, the squared
+    // distance between them.
+    segSeg(p1, q1, p2, q2, out) {
+        const V = this.sv();
+        const d1 = V[0].subVectors(q1, p1);
+        const d2 = V[1].subVectors(q2, p2);
+        const r = V[2].subVectors(p1, p2);
+        const a = d1.dot(d1);
+        const e = d2.dot(d2);
+        const f = d2.dot(r);
+        const cl = WeaponKit.clamp;
+        let s = 0;
+        let t = 0;
+        if (a < 1e-9 && e < 1e-9) {
+            s = t = 0;
+        } else if (a < 1e-9) {
+            t = cl(f / e);
+        } else {
+            const c = d1.dot(r);
+            if (e < 1e-9) {
+                s = cl(-c / a);
+            } else {
+                const b = d1.dot(d2);
+                const den = a * e - b * b;
+                s = den > 1e-12 ? cl((b * f - c * e) / den) : 0;
+                t = (b * s + f) / e;
+                if (t < 0) {
+                    t = 0;
+                    s = cl(-c / a);
+                } else if (t > 1) {
+                    t = 1;
+                    s = cl((b - c) / a);
+                }
+            }
+        }
+        const pa = V[3].copy(p1).addScaledVector(d1, s);
+        const pb = V[4].copy(p2).addScaledVector(d2, t);
+        out.s = s;
+        out.t = t;
+        out.d2 = pa.distanceToSquared(pb);
+        return out;
+    },
+
+    // The first live enemy along the path a -> b whose body (a vertical segment, its radius wide)
+    // comes within `reach` of it, with a hit on its model: { hit, s } (s is the fraction along the
+    // path), or null. The body point aimed at stays below the head, so a near miss over an enemy
+    // is not a head shot; a direct hit from the normal trace still is.
+    hookHit(a, b, reach) {
+        const room = typeof Game !== 'undefined' && Game.room;
+        if (!(reach > 0) || !room || typeof Enemies === 'undefined') {
+            return null;
+        }
+        const V = this.sv();
+        const q0 = V[5];
+        const q1 = V[6];
+        const cands = [];
+        const ss = {};
+        for (const e of Enemies.list) {
+            if (e.dead) {
+                continue;
+            }
+            q0.set(e.pos.x, e.pos.y + e.height * 0.15, e.pos.z);
+            q1.set(e.pos.x, e.pos.y + e.height * 0.7, e.pos.z);
+            const r = e.radius + reach;
+            if (this.segSeg(a, b, q0, q1, ss).d2 <= r * r) {
+                cands.push({ e, s: ss.s, t: ss.t });
+            }
+        }
+        cands.sort((x, y) => x.s - y.s);
+        const p = new THREE.Vector3();
+        const q = new THREE.Vector3();
+        const n = new THREE.Vector3();
+        for (const c of cands) {
+            const e = c.e;
+            p.copy(a).lerp(b, c.s);
+            q.set(e.pos.x, e.pos.y + e.height * WeaponKit.lerp(0.15, 0.7, c.t), e.pos.z);
+            n.copy(q).sub(p);
+            const dist = n.length();
+            if (dist > 1e-3) {
+                n.multiplyScalar(1 / dist);
+            } else {
+                n.copy(b).sub(a).normalize();
+            }
+            // From the spear toward the body; if the spear is already inside the model, from
+            // just outside it.
+            let hit = this.rayEnemy(room, p, n, dist + e.radius + 0.3);
+            if (!hit) {
+                const from = q.clone().addScaledVector(n, -(e.radius + 0.35));
+                hit = this.rayEnemy(room, from, n, e.radius + 0.7);
+            }
+            if (hit) {
+                return { hit, s: c.s };
+            }
+        }
+        return null;
+    },
+
+    // First thing a ray meets: a hit on a live enemy, or null if a wall (anything else) comes first.
+    // Corpses are passed through. Same raycaster as `Arsenal.trace`, so batched models count.
+    rayEnemy(room, from, dir, far) {
+        const ray = Arsenal.ray;
+        ray.set(from, dir);
+        ray.far = far;
+        for (const h of ray.intersectObject(room.group, true)) {
+            if (!h.object.visible) {
+                continue;
+            }
+            const e = this.enemyOf(h.object);
+            if (!e) {
+                return null;
+            }
+            if (!e.dead) {
+                const normal = h.face ? h.face.normal.clone().transformDirection(h.object.matrixWorld) : dir.clone().negate();
+                return { point: h.point, normal, object: h.object, distance: h.distance };
+            }
+        }
+        return null;
     },
 
     placeFlying(f) {
@@ -568,6 +825,8 @@ Weapons.register('spear', {
         f.pos.copy(hit.point);
         const e = this.enemyOf(hit.object);
         f.end = Math.min(f.end, f.t + 0.6);
+        f.hitT = f.t;
+        this.endTrail(w, hit.point);
         if (e && !e.dead) {
             if (!w.remote) {
                 w.reportHits([hit], { mode: 'throw', damage: f.damage, origin: hit.point.clone().addScaledVector(f.dir, -1) });
@@ -596,11 +855,20 @@ Weapons.register('spear', {
         if (!f.landed && !f.stuck) {
             f.vel.y -= T.gravity * dt;
             f.dir.copy(f.vel).normalize();
-            const hit = w.trace ? w.trace(f.pos, f.dir, f.vel.length() * dt) : null;
-            if (hit) {
+            const step = f.vel.length() * dt;
+            const hit = w.trace ? w.trace(f.pos, f.dir, step) : null;
+            // The open grapnel snags an enemy the path passes close to, if it comes before
+            // whatever the tip itself would hit. The spear swings into it as it latches on.
+            const end = this.sv()[7].copy(f.pos).addScaledVector(f.vel, dt);
+            const snag = this.hookHit(f.pos, end, this.reach(f));
+            if (snag && (!hit || snag.s * step <= hit.distance + 0.05)) {
+                const at = f.pos.clone().lerp(end, snag.s);
+                f.dir.lerp(snag.hit.point.clone().sub(at).normalize(), 0.7).normalize();
+                this.flyHit(w, f, snag.hit);
+            } else if (hit) {
                 this.flyHit(w, f, hit);
             } else {
-                f.pos.addScaledVector(f.vel, dt);
+                f.pos.copy(end);
                 const n = fx.rate('trail', 50, dt);
                 for (let i = 0; i < n; i++) {
                     fx.emit({ world: true, pos: f.mesh.localToWorld(_ev.set(0, 0, -Math.random() * 0.8)), vel: K.sphereDir().multiplyScalar(0.15), life: K.rand(0.3, 0.6), size: 0.006, sizeEnd: 0.002, color: Math.random() < 0.6 ? this.color : 0xffffff, drag: 2 });
@@ -608,12 +876,27 @@ Weapons.register('spear', {
             }
         }
         this.placeFlying(f);
+        this.poseHook(f, dt);
+        // Where the grapnel sits (the blade's base), for the trail and the snap.
+        f.hp.copy(f.pos).addScaledVector(f.dir, -0.3 * T.scale);
+        if (!f.landed && !f.stuck) {
+            this.feedTrail(w.data.trail, f.hp, f.dir, dt);
+            // The head snaps open: a ring the size of its reach and spores flung out sideways.
+            const snap = 0.05;
+            if (f.t - dt < snap && f.t >= snap) {
+                fx.emit({ world: true, shape: 'ring', pos: f.hp, dir: f.dir, vel: new THREE.Vector3(), life: 0.2, size: 0.05, sizeEnd: T.hook + 0.15, color: this.color, opacity: 0.8 });
+                for (let i = 0; i < 12; i++) {
+                    const side = K.sphereDir().addScaledVector(f.dir, -K.sphereDir().dot(f.dir)).normalize();
+                    fx.emit({ world: true, pos: f.hp, vel: side.multiplyScalar(K.rand(1.5, 3)).addScaledVector(f.vel, 0.5), life: K.rand(0.15, 0.3), size: 0.005, sizeEnd: 0, color: i % 3 ? this.color : 0xffffff, drag: 5, stretch: 0.03 });
+                }
+            }
+        }
         // Dissolve: the spear glows, shrinks toward its middle and comes apart into spores.
         const k = K.seg(f.t, f.end, f.end + T.dissolve);
         const glow = K.seg(f.t, f.end - 0.25, f.end + 0.2);
         for (const mat of f.mesh.userData.mats) {
             if (mat.emissive) {
-                mat.emissiveIntensity = glow * 1.4;
+                mat.emissiveIntensity = (mat.userData.flyGlow || 0) + glow * 1.4;
             }
         }
         if (k > 0) {
@@ -634,6 +917,12 @@ Weapons.register('spear', {
     },
 
     drop(w) {
+        const tr = w.data.trail;
+        if (tr) {
+            tr.pts.length = 0;
+            tr.live = false;
+            tr.mesh.visible = false;
+        }
         const f = w.data.flying;
         if (!f) {
             return;
@@ -645,6 +934,223 @@ Weapons.register('spear', {
             mat.dispose();
         }
         w.data.flying = null;
+    },
+
+    // ------------------------------------------------------------------ trail
+
+    // Ribbon behind the thrown spear: a glowing band along the flight path (it follows the arc)
+    // with two strands twisting around it and drifting apart as they fade. One mesh of three
+    // camera-facing strips, additive, faded through vertex colours, so it is one draw call. Built
+    // once per weapon, in world space under `fx.worldParent` (the scene).
+    trail(w) {
+        const d = w.data;
+        if (d.trail) {
+            if (!d.trail.mesh.parent && w.fx.worldParent) {
+                w.fx.worldParent.add(d.trail.mesh);
+            }
+            return d.trail;
+        }
+        const N = this.throwCfg.trail.max;
+        const V = 3 * N * 2;
+        const geo = new THREE.BufferGeometry();
+        const pos = new THREE.BufferAttribute(new Float32Array(V * 3), 3);
+        const col = new THREE.BufferAttribute(new Float32Array(V * 3), 3);
+        pos.setUsage(THREE.DynamicDrawUsage);
+        col.setUsage(THREE.DynamicDrawUsage);
+        const uv = new Float32Array(V * 2);
+        const idx = [];
+        for (let s = 0; s < 3; s++) {
+            for (let i = 0; i < N; i++) {
+                const v = (s * N + i) * 2;
+                uv[v * 2] = 0;
+                uv[v * 2 + 1] = 0.5;
+                uv[v * 2 + 2] = 1;
+                uv[v * 2 + 3] = 0.5;
+                if (i < N - 1) {
+                    idx.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+                }
+            }
+        }
+        geo.setAttribute('position', pos);
+        geo.setAttribute('color', col);
+        geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+        geo.setIndex(idx);
+        const mat = new THREE.MeshBasicMaterial({
+            map: this.trailTexture(), vertexColors: true, transparent: true,
+            blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+        });
+        mat.fog = false;
+        mat.toneMapped = false;
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.frustumCulled = false;
+        mesh.visible = false;
+        if (w.fx.worldParent) {
+            w.fx.worldParent.add(mesh);
+        }
+        d.trail = {
+            mesh, pts: [], list: [], live: false, cs: Array.from({ length: N }, () => new THREE.Vector3()),
+            head: { p: new THREE.Vector3(), side: new THREE.Vector3(), up: new THREE.Vector3(), s: 0, age: 0 },
+            cam: new THREE.Vector3(), tan: new THREE.Vector3(), off: new THREE.Vector3()
+        };
+        return d.trail;
+    },
+
+    // Across the band: soft pink edges, a hot white core.
+    trailTexture() {
+        const W = 64;
+        const cv = document.createElement('canvas');
+        cv.width = W;
+        cv.height = 2;
+        const ctx = cv.getContext('2d');
+        const img = ctx.createImageData(W, 2);
+        const c = new THREE.Color(this.color);
+        for (let x = 0; x < W; x++) {
+            const u = Math.abs((x + 0.5) / W * 2 - 1);
+            const body = Math.pow(1 - u, 1.6);
+            const hot = Math.exp(-Math.pow(u / 0.22, 2)) * 0.85;
+            for (let y = 0; y < 2; y++) {
+                const i = (y * W + x) * 4;
+                img.data[i] = Math.min(255, (c.r * body + hot) * 255);
+                img.data[i + 1] = Math.min(255, (c.g * body + hot) * 255);
+                img.data[i + 2] = Math.min(255, (c.b * body + hot) * 255);
+                img.data[i + 3] = 255;
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+        return new THREE.CanvasTexture(cv);
+    },
+
+    trailPoint(p, dir, s, age, out) {
+        const q = out || { p: new THREE.Vector3(), side: new THREE.Vector3(), up: new THREE.Vector3(), s: 0, age: 0 };
+        q.p.copy(p);
+        q.side.set(0, 1, 0).cross(dir);
+        if (q.side.lengthSq() < 1e-6) {
+            q.side.set(1, 0, 0);
+        }
+        q.side.normalize();
+        q.up.crossVectors(dir, q.side).normalize();
+        q.s = s;
+        q.age = age;
+        return q;
+    },
+
+    // Adds samples up to the grapnel's position, `spacing` apart (several per frame when it moves
+    // fast, spread over the frame's time so they fade evenly).
+    feedTrail(tr, p, dir, dt) {
+        if (!tr || !tr.live) {
+            return;
+        }
+        const C = this.throwCfg.trail;
+        const pts = tr.pts;
+        const last = pts[pts.length - 1];
+        if (!last) {
+            pts.push(this.trailPoint(p, dir, 0, 0));
+            return;
+        }
+        const gap = last.p.distanceTo(p);
+        if (gap >= C.spacing) {
+            const from = last.p.clone();
+            const steps = Math.min(8, Math.floor(gap / C.spacing));
+            for (let k = 1; k <= steps; k++) {
+                const u = k / steps;
+                pts.push(this.trailPoint(from.clone().lerp(p, u), dir, last.s + gap * u, (1 - u) * dt));
+            }
+        }
+        while (pts.length > C.max - 1) {
+            pts.shift();
+        }
+    },
+
+    // The spear hit something: the trail runs up to the impact and stops growing.
+    endTrail(w, point) {
+        const tr = w.data.trail;
+        const f = w.data.flying;
+        if (!tr || !tr.live) {
+            return;
+        }
+        if (f) {
+            this.feedTrail(tr, point, f.dir, 0);
+            const last = tr.pts[tr.pts.length - 1];
+            if (last && last.p.distanceToSquared(point) > 1e-4) {
+                tr.pts.push(this.trailPoint(point, f.dir, last.s + last.p.distanceTo(point), 0));
+            }
+        }
+        tr.live = false;
+    },
+
+    updateTrail(w, dt) {
+        const tr = w.data.trail;
+        if (!tr) {
+            return;
+        }
+        const C = this.throwCfg.trail;
+        const N = C.max;
+        const pts = tr.pts;
+        for (const q of pts) {
+            q.age += dt;
+        }
+        while (pts.length && pts[0].age > C.life) {
+            pts.shift();
+        }
+        const list = tr.list;
+        list.length = 0;
+        for (const q of pts) {
+            list.push(q);
+        }
+        const f = w.data.flying;
+        const last = pts[pts.length - 1];
+        if (tr.live && f && last) {
+            list.push(this.trailPoint(f.hp, f.dir, last.s + last.p.distanceTo(f.hp), 0, tr.head));
+        }
+        const n = Math.min(N, list.length);
+        tr.mesh.visible = n >= 2;
+        if (n < 2) {
+            return;
+        }
+        tr.cam.setFromMatrixPosition(camera.matrixWorld);
+        const pos = tr.mesh.geometry.attributes.position;
+        const col = tr.mesh.geometry.attributes.color;
+        const P = pos.array;
+        const Cl = col.array;
+        const cs = tr.cs;
+        const tan = tr.tan;
+        const off = tr.off;
+        for (let s = 0; s < 3; s++) {
+            // Centres of this strip: the band on the path, the strands on a widening helix.
+            for (let i = 0; i < n; i++) {
+                const q = list[i];
+                cs[i].copy(q.p);
+                if (s > 0) {
+                    const a = q.s * C.twist + (s === 2 ? Math.PI : 0);
+                    const r = C.radius + q.age * C.drift;
+                    cs[i].addScaledVector(q.side, Math.cos(a) * r).addScaledVector(q.up, Math.sin(a) * r);
+                }
+            }
+            for (let i = 0; i < N; i++) {
+                const v = (s * N + i) * 2;
+                const j = Math.min(i, n - 1);
+                const q = list[j];
+                const k = i < n ? Math.max(0, 1 - q.age / C.life) : 0;
+                const width = (s === 0 ? C.width * (0.3 + 0.7 * k) : C.strand * k) * 0.5;
+                const bright = i < n ? (s === 0 ? Math.pow(k, 1.3) : 0.9 * k) : 0;
+                tan.copy(cs[Math.min(j + 1, n - 1)]).sub(cs[Math.max(j - 1, 0)]);
+                off.copy(cs[j]).sub(tr.cam).cross(tan);
+                const len = off.length();
+                off.multiplyScalar(len > 1e-8 ? width / len : 0);
+                const c = cs[j];
+                P[v * 3] = c.x + off.x;
+                P[v * 3 + 1] = c.y + off.y;
+                P[v * 3 + 2] = c.z + off.z;
+                P[v * 3 + 3] = c.x - off.x;
+                P[v * 3 + 4] = c.y - off.y;
+                P[v * 3 + 5] = c.z - off.z;
+                for (let m = 0; m < 6; m++) {
+                    Cl[v * 3 + m] = bright;
+                }
+            }
+        }
+        pos.needsUpdate = true;
+        col.needsUpdate = true;
     },
 
     // ------------------------------------------------------------------ HUD
@@ -687,6 +1193,27 @@ Weapons.register('spear', {
             return WeaponKit.seg(w.actT, 0.05, 0.6);
         }
         return w.data.shown;
+    },
+
+    // Wind-up offsets [x, y, z, rot x, rot y, rot z] of the model for a charged throw: `a` is how
+    // far the spear has come up (0..1), `c` the eased charge, which draws it further back.
+    windup(a, c, out) {
+        out[0] = a * 0.03 + c * 0.015;
+        out[1] = a * 0.14 + c * 0.03;
+        out[2] = a * 0.1 + c * 0.17;
+        out[3] = a * 0.1 + c * 0.07;
+        out[4] = -a * 0.05 - c * 0.03;
+        out[5] = -a * 0.1 - c * 0.08;
+        return out;
+    },
+
+    addPose(M, o) {
+        M.position.x += o[0];
+        M.position.y += o[1];
+        M.position.z += o[2];
+        M.rotation.x += o[3];
+        M.rotation.y += o[4];
+        M.rotation.z += o[5];
     },
 
     pose(w, dt) {
@@ -751,28 +1278,58 @@ Weapons.register('spear', {
             s.rotation.x += d.jiggle.x * 0.03 + Math.sin(w.time * 1.4 + i) * 0.015;
         });
 
-        // Charging a throw: the spear comes up and back over the shoulder.
+        // Grapnel in the hand: when a throw starts charging, the claws and thorns grow out of the
+        // blade's base, open wider as the charge builds and turn slowly, quivering at full power.
+        // The release whip snaps them fully open, and the thrown copy leaves open.
+        let hs = 0;
+        let ho = 0;
         if (w.state === 'charge') {
-            const a = K.e('outCubic', w.actT, 0, 0.25);
             const c = K.ease.outCubic(d.charge);
-            M.position.x -= a * 0.02;
-            M.position.y += a * 0.13;
-            M.position.z += a * 0.1 + c * 0.08;
-            M.rotation.x += a * 0.08;
-            M.rotation.y -= a * 0.04;
-            const tremble = d.charge >= 1 ? 0.0025 : 0;
+            hs = K.e('outBack', w.actT, T.hookGrow[0], T.hookGrow[1]) * K.lerp(0.7, 1, c);
+            ho = K.lerp(0.2, 0.85, c);
+            d.hookS = hs;
+            d.hookO = ho;
+        } else if (w.state === 'throw' && !d.launched) {
+            const r = K.e('outCubic', w.actT, 0, T.release);
+            hs = K.lerp(d.hookS, 1, r);
+            ho = K.lerp(d.hookO, 1, r);
+        }
+        P.hook.visible = hs > 0.01;
+        if (P.hook.visible) {
+            const q = w.state === 'charge' && d.charge >= 1 ? 0.05 * Math.sin(w.time * 18) : 0;
+            for (const o of P.tines) {
+                const u = o.userData.tine;
+                o.rotation.y = K.lerp(u.fold, u.open, ho) + q;
+                o.scale.setScalar(Math.max(0.001, hs));
+            }
+            d.hookSpin += dt * (0.5 + 2.5 * ho);
+            P.hook.rotation.z = d.hookSpin;
+        }
+
+        // Charging a throw: the spear comes up beside the head and is drawn far back, tip raised and
+        // rolled, shaking harder as the charge builds.
+        if (w.state === 'charge') {
+            const a = K.e('outCubic', w.actT, 0, 0.22);
+            d.windA = a;
+            this.addPose(M, this.windup(a, K.ease.outCubic(d.charge), d.pose));
+            const tremble = d.charge >= 1 ? 0.0025 : 0.0008 * d.charge;
             M.position.x += Math.sin(w.time * 47) * tremble;
             M.position.y += Math.sin(w.time * 53) * tremble;
         }
-        // Throwing: the spear is gone; the empty grip follows through.
+        // Throwing: from the wind-up the spear whips forward and leaves the hand at `release`; the
+        // empty hand follows through down and across the body, then comes back up for the regrow.
         if (w.state === 'throw') {
-            P.body.visible = false;
             P.veins.visible = false;
+            P.body.visible = !d.launched;
             const t = w.actT;
-            const out = K.e('outCubic', t, 0, 0.1) * (1 - K.e('inOutCubic', t, 0.12, T.throwTime));
-            M.position.y += 0.13 - out * 0.12;
-            M.position.z += 0.18 - out * 0.4;
-            M.rotation.x += 0.08 - out * 0.1;
+            const o = this.windup(d.windA, K.ease.outCubic(d.launched ? d.relC : d.charge), d.pose);
+            const r = K.e('inQuad', t, 0, T.release);
+            const fo = K.e('outCubic', t, T.release * 0.6, 0.2);
+            const back = K.e('inOutCubic', t, 0.2, T.throwTime);
+            for (let i = 0; i < 6; i++) {
+                o[i] = K.lerp(K.lerp(o[i], this.THRUST[i], r), this.FOLLOW[i], fo) * (1 - back);
+            }
+            this.addPose(M, o);
         }
         // Regrowing: tendrils shoot out of the hand, the shaft fills in along them, then the
         // guard, mushrooms and blade pop out.
@@ -844,8 +1401,10 @@ Weapons.register('spear', {
             H.right.squeeze(0.1 * w.data.charge);
         }
         if (w.state === 'throw') {
+            // The front arm pulls down as the throw goes, and is pointing again for the regrow.
             H.left.to(this.LEFT_AIM, 1);
-            H.right.squeeze(-0.8 * K.e('outQuad', t, 0, 0.08));
+            H.left.to(this.LEFT_PULL, K.e('outCubic', t, 0.01, 0.15) * (1 - K.e('inOutCubic', t, 0.24, T.throwTime)));
+            H.right.squeeze(0.15 * (1 - K.seg(t, 0, T.release)) - 0.8 * K.e('outQuad', t, T.release * 0.8, T.release + 0.07));
         }
         if (w.state === 'regrow') {
             H.left.to(this.LEFT_AIM, 1 - K.e('inOutCubic', t, 1.05, 1.45));
@@ -872,6 +1431,7 @@ Weapons.register('spear', {
         const glow = this.color;
 
         this.updateFlying(w, dt);
+        this.updateTrail(w, dt);
 
         const wg = this.webGrowth(w);
         if (wg > 0.02) {
@@ -902,6 +1462,13 @@ Weapons.register('spear', {
                 const t = P.tendrils[(Math.random() * 3) | 0];
                 const p = w.localPos(P.veins, t.userData.tube.curve.getPointAt(K.rand(0.4, 1), d.v).toArray());
                 fx.emit({ pos: p, vel: K.sphereDir().multiplyScalar(0.05), attract: hand, pull: 9, life: 0.5, size: K.rand(0.003, 0.006), sizeEnd: 0.001, color: Math.random() < 0.7 ? glow : 0xffffff, drag: 1.5, fadeIn: 0.05 });
+            }
+        }
+        // The grapnel sprouting: a puff of spores and splinters at the blade's base.
+        if (w.state === 'charge' && w.atAct(0.08)) {
+            const at = w.localPos(P.hook);
+            for (let i = 0; i < 14; i++) {
+                fx.emit({ pos: at, vel: K.sphereDir().multiplyScalar(K.rand(0.08, 0.25)), life: K.rand(0.2, 0.4), size: K.rand(0.002, 0.005), sizeEnd: 0, color: i % 3 ? glow : 0xffffff, drag: 3 });
             }
         }
         if (w.state === 'charge') {
